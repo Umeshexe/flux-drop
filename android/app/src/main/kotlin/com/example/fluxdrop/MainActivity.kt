@@ -1,4 +1,4 @@
-package com.example.neo_sapien
+package com.example.fluxdrop
 
 import io.flutter.embedding.android.FlutterActivity
 
