@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "991735936662",
+    "project_id": "fluxdrop-1a9d7",
+    "storage_bucket": "fluxdrop-1a9d7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:991735936662:android:69b34179a13e01b7beb4b7",
+        "android_client_info": {
+          "package_name": "com.example.fluxdrop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlVHNwS7JnFQQ1h0am_DGWG7GlIv27GvM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

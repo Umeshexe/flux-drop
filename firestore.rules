@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection: only the user can write their own doc, anyone authenticated can read (for code lookup)
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false; // Never delete user docs
+    }
+
+    // Transfers: sender can create/update their own. Receiver can update (for download progress). Both can read.
+    match /transfers/{transferId} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == resource.data.senderId ||
+         request.auth.uid == resource.data.receiverId);
+
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.senderId &&
+        request.resource.data.senderId != request.resource.data.receiverId; // Can't send to self
+
+      allow update: if request.auth != null &&
+        (request.auth.uid == resource.data.senderId ||
+         request.auth.uid == resource.data.receiverId);
+
+      allow delete: if false;
+    }
+  }
+}

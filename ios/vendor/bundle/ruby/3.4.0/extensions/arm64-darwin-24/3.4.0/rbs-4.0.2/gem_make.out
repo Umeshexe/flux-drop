@@ -1,0 +1,104 @@
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/rbs-4.0.2/ext/rbs_extension
+/opt/homebrew/opt/ruby/bin/ruby extconf.rb
+checking for whether -std=gnu99 is accepted as CFLAGS... no
+checking for whether -Wimplicit-fallthrough is accepted as CFLAGS... no
+checking for whether -Wunused-result is accepted as CFLAGS... no
+checking for whether -Wc++-compat is accepted as CFLAGS... no
+checking for whether -DNDEBUG is accepted as CFLAGS... no
+creating Makefile
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/rbs-4.0.2/ext/rbs_extension
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-hmyekt sitelibdir\=./.gem.20260418-64674-hmyekt clean
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/rbs-4.0.2/ext/rbs_extension
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-hmyekt sitelibdir\=./.gem.20260418-64674-hmyekt
+compiling ./../../src/ast.c
+compiling ./../../src/lexer.c
+compiling ./../../src/lexstate.c
+compiling ./../../src/location.c
+compiling ./../../src/parser.c
+compiling ./../../src/string.c
+compiling ./../../src/util/rbs_allocator.c
+compiling ./../../src/util/rbs_assert.c
+compiling ./../../src/util/rbs_buffer.c
+compiling ./../../src/util/rbs_constant_pool.c
+compiling ./../../src/util/rbs_encoding.c
+compiling ./../../src/util/rbs_unescape.c
+compiling ast_translation.c
+In file included from ast_translation.c:8:
+In file included from ./ast_translation.h:14:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling class_constants.c
+In file included from class_constants.c:8:
+In file included from ./rbs_extension.h:5:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling legacy_location.c
+In file included from legacy_location.c:1:
+In file included from ./legacy_location.h:7:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling main.c
+In file included from main.c:1:
+In file included from ./rbs_extension.h:5:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling rbs_string_bridging.c
+In file included from rbs_string_bridging.c:1:
+In file included from ./rbs_string_bridging.h:7:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+linking shared-object rbs_extension.bundle
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/rbs-4.0.2/ext/rbs_extension
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-hmyekt sitelibdir\=./.gem.20260418-64674-hmyekt install
+/usr/bin/install -c -m 0755 rbs_extension.bundle ./.gem.20260418-64674-hmyekt
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/rbs-4.0.2/ext/rbs_extension
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-hmyekt sitelibdir\=./.gem.20260418-64674-hmyekt clean

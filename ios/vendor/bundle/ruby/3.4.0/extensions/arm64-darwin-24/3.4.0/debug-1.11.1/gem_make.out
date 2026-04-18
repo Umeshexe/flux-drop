@@ -1,0 +1,41 @@
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/debug-1.11.1/ext/debug
+/opt/homebrew/opt/ruby/bin/ruby extconf.rb
+creating Makefile
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/debug-1.11.1/ext/debug
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-qzyzuc sitelibdir\=./.gem.20260418-64674-qzyzuc clean
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/debug-1.11.1/ext/debug
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-qzyzuc sitelibdir\=./.gem.20260418-64674-qzyzuc
+compiling debug.c
+In file included from debug.c:2:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling iseq_collector.c
+In file included from iseq_collector.c:1:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+linking shared-object debug/debug.bundle
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/debug-1.11.1/ext/debug
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-qzyzuc sitelibdir\=./.gem.20260418-64674-qzyzuc install
+/usr/bin/install -c -m 0755 debug.bundle ./.gem.20260418-64674-qzyzuc/debug
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/debug-1.11.1/ext/debug
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-qzyzuc sitelibdir\=./.gem.20260418-64674-qzyzuc clean

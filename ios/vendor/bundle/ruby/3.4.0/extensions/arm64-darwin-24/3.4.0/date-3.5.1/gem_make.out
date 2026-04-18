@@ -1,0 +1,71 @@
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/date-3.5.1/ext/date
+/opt/homebrew/opt/ruby/bin/ruby extconf.rb
+checking for rb_category_warn()... yes
+checking for timezone in time.h with -Werror... no
+checking for altzone in time.h with -Werror... no
+creating Makefile
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/date-3.5.1/ext/date
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-9u0eee sitelibdir\=./.gem.20260418-64674-9u0eee clean
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/date-3.5.1/ext/date
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-9u0eee sitelibdir\=./.gem.20260418-64674-9u0eee
+compiling date_core.c
+In file included from date_core.c:5:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling date_parse.c
+In file included from date_parse.c:5:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling date_strftime.c
+In file included from date_strftime.c:7:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+compiling date_strptime.c
+In file included from date_strptime.c:5:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby.h:38:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/ruby.h:28:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic.h:24:
+In file included from /opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/arithmetic/char.h:29:
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rstring.h:398:24: warning: default initialization of an object of type 'struct RString' with const member leaves the object uninitialized [-Wdefault-const-init-field-unsafe]
+  398 |         struct RString retval;
+      |                        ^
+/opt/homebrew/Cellar/ruby/3.4.1/include/ruby-3.4.0/ruby/internal/core/rbasic.h:86:17: note: member 'klass' declared 'const' here
+   86 |     const VALUE klass;
+      |                 ^
+1 warning generated.
+linking shared-object date_core.bundle
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/date-3.5.1/ext/date
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-9u0eee sitelibdir\=./.gem.20260418-64674-9u0eee install
+/usr/bin/install -c -m 0755 date_core.bundle ./.gem.20260418-64674-9u0eee
+
+current directory: /Users/umesh/Desktop/NeoSapien/fluxdrop/ios/vendor/bundle/ruby/3.4.0/gems/date-3.5.1/ext/date
+make DESTDIR\= sitearchdir\=./.gem.20260418-64674-9u0eee sitelibdir\=./.gem.20260418-64674-9u0eee clean
