@@ -21,20 +21,26 @@ class TransferService {
 
   // ─── Stream of incoming transfers for a receiver ──────────────────────────
   Stream<List<TransferModel>> incomingTransfers(String receiverId) {
-    debugPrint('📥 [Transfer] Listening for incoming transfers for: $receiverId');
+    debugPrint(
+      '📥 [Transfer] Listening for incoming transfers for: $receiverId',
+    );
     return _db
         .collection(AppConstants.transfersCollection)
         .where('receiverId', isEqualTo: receiverId)
-        .where('status', whereIn: [
-          AppConstants.statusUploaded,
-          AppConstants.statusDownloading,
-          AppConstants.statusCompleted,
-        ])
+        .where(
+          'status',
+          whereIn: [
+            AppConstants.statusUploaded,
+            AppConstants.statusDownloading,
+            AppConstants.statusCompleted,
+          ],
+        )
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => TransferModel.fromMap(d.data()))
-            .toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => TransferModel.fromMap(d.data())).toList(),
+        );
   }
 
   // ─── Stream of outgoing transfers for a sender ────────────────────────────
@@ -45,9 +51,10 @@ class TransferService {
         .where('senderId', isEqualTo: senderId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => TransferModel.fromMap(d.data()))
-            .toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => TransferModel.fromMap(d.data())).toList(),
+        );
   }
 
   // ─── Stream for a single transfer (real-time progress) ───────────────────
@@ -57,9 +64,9 @@ class TransferService {
         .doc(transferId)
         .snapshots()
         .map((snap) {
-      if (!snap.exists) return null;
-      return TransferModel.fromMap(snap.data()!);
-    });
+          if (!snap.exists) return null;
+          return TransferModel.fromMap(snap.data()!);
+        });
   }
 
   // ─── Pick files, validate sizes, send ─────────────────────────────────────
@@ -75,7 +82,8 @@ class TransferService {
     for (final f in files) {
       if ((f.size) > AppConstants.maxFileSizeBytes) {
         throw Exception(
-            '${f.name} exceeds the 500 MB limit (${_formatBytes(f.size)})');
+          '${f.name} exceeds the 500 MB limit (${_formatBytes(f.size)})',
+        );
       }
       if (f.size == 0) {
         throw Exception('${f.name} is a zero-byte file and cannot be sent.');
@@ -84,29 +92,34 @@ class TransferService {
 
     final transferId = _uuid.v4();
     final now = DateTime.now();
-    final expiresAt = now.add(const Duration(hours: AppConstants.transferTtlHours));
+    final expiresAt = now.add(
+      const Duration(hours: AppConstants.transferTtlHours),
+    );
 
     // Compute total bytes for aggregate progress
     final totalBytes = files.fold<int>(0, (total, f) => total + f.size);
 
     debugPrint('📤 [Transfer] Creating Firestore doc: $transferId');
     // Create transfer document in Firestore with 'uploading' status
-    final transferRef =
-        _db.collection(AppConstants.transfersCollection).doc(transferId);
+    final transferRef = _db
+        .collection(AppConstants.transfersCollection)
+        .doc(transferId);
 
-    await transferRef.set(TransferModel(
-      transferId: transferId,
-      senderId: sender.uid,
-      receiverId: receiver.uid,
-      senderCode: sender.shortCode,
-      receiverCode: receiver.shortCode,
-      files: [],
-      status: TransferStatus.uploading,
-      createdAt: now,
-      expiresAt: expiresAt,
-      totalBytes: totalBytes,
-      transferredBytes: 0,
-    ).toMap());
+    await transferRef.set(
+      TransferModel(
+        transferId: transferId,
+        senderId: sender.uid,
+        receiverId: receiver.uid,
+        senderCode: sender.shortCode,
+        receiverCode: receiver.shortCode,
+        files: [],
+        status: TransferStatus.uploading,
+        createdAt: now,
+        expiresAt: expiresAt,
+        totalBytes: totalBytes,
+        transferredBytes: 0,
+      ).toMap(),
+    );
 
     // Upload files one by one
     final List<FileInfo> uploadedFiles = [];
@@ -114,7 +127,9 @@ class TransferService {
 
     for (int i = 0; i < files.length; i++) {
       final platformFile = files[i];
-      debugPrint('📤 [Transfer] Uploading file ${i+1}/${files.length}: ${platformFile.name} (${_formatBytes(platformFile.size)})');
+      debugPrint(
+        '📤 [Transfer] Uploading file ${i + 1}/${files.length}: ${platformFile.name} (${_formatBytes(platformFile.size)})',
+      );
       final file = File(platformFile.path!);
       final bytes = await file.readAsBytes();
 
@@ -122,8 +137,7 @@ class TransferService {
       final hash = sha256.convert(bytes).toString();
 
       // Deduplicate: check if this hash already exists for this transfer
-      final storagePath =
-          'transfers/$transferId/${i}_${platformFile.name}';
+      final storagePath = 'transfers/$transferId/${i}_${platformFile.name}';
       final ref = _storage.ref(storagePath);
 
       // Upload with progress tracking
@@ -159,16 +173,18 @@ class TransferService {
 
       bytesUploadedSoFar += platformFile.size;
 
-      uploadedFiles.add(FileInfo(
-        name: platformFile.name,
-        mimeType: platformFile.extension != null
-            ? _mimeFromExtension(platformFile.extension!)
-            : 'application/octet-stream',
-        sizeBytes: platformFile.size,
-        downloadUrl: downloadUrl,
-        storagePath: storagePath,
-        sha256Hash: hash,
-      ));
+      uploadedFiles.add(
+        FileInfo(
+          name: platformFile.name,
+          mimeType: platformFile.extension != null
+              ? _mimeFromExtension(platformFile.extension!)
+              : 'application/octet-stream',
+          sizeBytes: platformFile.size,
+          downloadUrl: downloadUrl,
+          storagePath: storagePath,
+          sha256Hash: hash,
+        ),
+      );
 
       // Update files list in Firestore as each file completes
       await transferRef.update({
@@ -196,14 +212,16 @@ class TransferService {
     required TransferModel transfer,
     required Function(int, int, int, int) onProgress,
   }) async {
-    final transferRef =
-        _db.collection(AppConstants.transfersCollection).doc(transfer.transferId);
+    final transferRef = _db
+        .collection(AppConstants.transfersCollection)
+        .doc(transfer.transferId);
 
     await transferRef.update({'status': AppConstants.statusDownloading});
 
     final dir = await getApplicationDocumentsDirectory();
-    final transferDir =
-        Directory('${dir.path}/FluxDrop/${transfer.transferId}');
+    final transferDir = Directory(
+      '${dir.path}/FluxDrop/${transfer.transferId}',
+    );
     await transferDir.create(recursive: true);
 
     final List<String> savedPaths = [];
@@ -229,9 +247,7 @@ class TransferService {
         onProgress(i + 1, transfer.files.length, total, totalBytes);
 
         final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-        transferRef.update({
-          'downloadProgress': progress,
-        });
+        transferRef.update({'downloadProgress': progress});
       });
 
       await downloadTask;
@@ -243,7 +259,8 @@ class TransferService {
           computedHash != fileInfo.sha256Hash) {
         await saveFile.delete();
         throw Exception(
-            'Integrity check failed for ${fileInfo.name}. File may be corrupted.');
+          'Integrity check failed for ${fileInfo.name}. File may be corrupted.',
+        );
       }
 
       bytesDownloadedSoFar += fileInfo.sizeBytes;
@@ -265,10 +282,10 @@ class TransferService {
       final now = DateTime.now();
       final expired = await _db
           .collection(AppConstants.transfersCollection)
-          .where('status', whereIn: [
-            AppConstants.statusPending,
-            AppConstants.statusUploaded,
-          ])
+          .where(
+            'status',
+            whereIn: [AppConstants.statusPending, AppConstants.statusUploaded],
+          )
           .where('expiresAt', isLessThan: Timestamp.fromDate(now))
           .get();
 
@@ -288,8 +305,7 @@ class TransferService {
     if (!file.existsSync()) return path;
 
     final dir = file.parent.path;
-    final name =
-        path.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
+    final name = path.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
     final ext = path.contains('.') ? '.${path.split('.').last}' : '';
 
     int counter = 1;

@@ -53,6 +53,13 @@ class FluxDropApp extends StatelessWidget {
       title: 'FluxDrop',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
+      builder: (context, child) {
+        return GestureDetector(
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          behavior: HitTestBehavior.opaque,
+          child: child,
+        );
+      },
       home: const SplashScreen(),
     );
   }
