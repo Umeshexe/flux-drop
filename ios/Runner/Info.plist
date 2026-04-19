@@ -76,6 +76,12 @@
 	<string>FluxDrop needs access to your documents to share files.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>FluxDrop may need microphone access when sharing audio files.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UISupportsDocumentBrowser</key>
+	<true/>
 
 	<!-- Required for FCM push notifications -->
 	<key>UIBackgroundModes</key>
@@ -83,5 +89,7 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>

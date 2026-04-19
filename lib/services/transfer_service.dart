@@ -35,12 +35,15 @@ class TransferService {
             AppConstants.statusCompleted,
           ],
         )
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-          (snap) =>
-              snap.docs.map((d) => TransferModel.fromMap(d.data())).toList(),
-        );
+        .map((snap) {
+          final list = snap.docs
+              .map((d) => TransferModel.fromMap(d.data()))
+              .toList();
+          // Local sort by createdAt descending to avoid composite index requirement
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   // ─── Stream of outgoing transfers for a sender ────────────────────────────
@@ -49,12 +52,15 @@ class TransferService {
     return _db
         .collection(AppConstants.transfersCollection)
         .where('senderId', isEqualTo: senderId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-          (snap) =>
-              snap.docs.map((d) => TransferModel.fromMap(d.data())).toList(),
-        );
+        .map((snap) {
+          final list = snap.docs
+              .map((d) => TransferModel.fromMap(d.data()))
+              .toList();
+          // Local sort by createdAt descending to avoid composite index requirement
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   // ─── Stream for a single transfer (real-time progress) ───────────────────
@@ -211,6 +217,7 @@ class TransferService {
   Future<List<String>> downloadTransfer({
     required TransferModel transfer,
     required Function(int, int, int, int) onProgress,
+    String? customPath,
   }) async {
     final transferRef = _db
         .collection(AppConstants.transfersCollection)
@@ -218,11 +225,20 @@ class TransferService {
 
     await transferRef.update({'status': AppConstants.statusDownloading});
 
-    final dir = await getApplicationDocumentsDirectory();
-    final transferDir = Directory(
-      '${dir.path}/FluxDrop/${transfer.transferId}',
-    );
-    await transferDir.create(recursive: true);
+    final String basePath =
+        customPath ?? (await getApplicationDocumentsDirectory()).path;
+    final transferDir = Directory('$basePath/FluxDrop/${transfer.transferId}');
+    
+    try {
+      await transferDir.create(recursive: true);
+    } catch (e) {
+      // If we can't create the directory, we fail early
+      await transferRef.update({
+        'status': AppConstants.statusUploaded,
+        'downloadProgress': 0.0,
+      });
+      throw Exception('Could not create download directory. Please try a different location.');
+    }
 
     final List<String> savedPaths = [];
     int bytesDownloadedSoFar = 0;
@@ -230,50 +246,65 @@ class TransferService {
         ? transfer.totalBytes
         : transfer.files.fold<int>(0, (s, f) => s + f.sizeBytes);
 
-    for (int i = 0; i < transfer.files.length; i++) {
-      final fileInfo = transfer.files[i];
-      final savePath = '${transferDir.path}/${fileInfo.name}';
+    try {
+      for (int i = 0; i < transfer.files.length; i++) {
+        final fileInfo = transfer.files[i];
+        final savePath = '${transferDir.path}/${fileInfo.name}';
 
-      // Handle filename conflicts
-      final resolvedPath = _resolveConflict(savePath);
-      final saveFile = File(resolvedPath);
+        // Handle filename conflicts
+        final resolvedPath = _resolveConflict(savePath);
+        final saveFile = File(resolvedPath);
 
-      final ref = _storage.ref(fileInfo.storagePath!);
-      final downloadTask = ref.writeToFile(saveFile);
+        final ref = _storage.ref(fileInfo.storagePath!);
+        final downloadTask = ref.writeToFile(saveFile);
 
-      downloadTask.snapshotEvents.listen((snapshot) {
-        final fileBytesDownloaded = snapshot.bytesTransferred;
-        final total = bytesDownloadedSoFar + fileBytesDownloaded;
-        onProgress(i + 1, transfer.files.length, total, totalBytes);
+        downloadTask.snapshotEvents.listen((snapshot) {
+          final fileBytesDownloaded = snapshot.bytesTransferred;
+          final total = bytesDownloadedSoFar + fileBytesDownloaded;
+          onProgress(i + 1, transfer.files.length, total, totalBytes);
 
-        final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-        transferRef.update({'downloadProgress': progress});
-      });
+          final progress = totalBytes > 0 ? total / totalBytes : 0.0;
+          transferRef.update({'downloadProgress': progress});
+        });
 
-      await downloadTask;
+        await downloadTask;
 
-      // ★ Integrity check: verify SHA-256 hash
-      final downloadedBytes = await saveFile.readAsBytes();
-      final computedHash = sha256.convert(downloadedBytes).toString();
-      if (fileInfo.sha256Hash.isNotEmpty &&
-          computedHash != fileInfo.sha256Hash) {
-        await saveFile.delete();
-        throw Exception(
-          'Integrity check failed for ${fileInfo.name}. File may be corrupted.',
-        );
+        // Verify SHA-256 hash
+        final downloadedBytes = await saveFile.readAsBytes();
+        final computedHash = sha256.convert(downloadedBytes).toString();
+        if (fileInfo.sha256Hash.isNotEmpty &&
+            computedHash != fileInfo.sha256Hash) {
+          await saveFile.delete();
+          throw Exception(
+            'Integrity check failed for ${fileInfo.name}. File may be corrupted.',
+          );
+        }
+
+        bytesDownloadedSoFar += fileInfo.sizeBytes;
+        savedPaths.add(resolvedPath);
       }
 
-      bytesDownloadedSoFar += fileInfo.sizeBytes;
-      savedPaths.add(resolvedPath);
+      // Mark as completed
+      await transferRef.update({
+        'status': AppConstants.statusCompleted,
+        'downloadProgress': 1.0,
+      });
+
+      return savedPaths;
+    } catch (e) {
+      // Revert status on failure
+      await transferRef.update({
+        'status': AppConstants.statusUploaded,
+        'downloadProgress': 0.0,
+      });
+
+      if (e.toString().contains('Operation not permitted')) {
+        throw Exception(
+            'Android Storage Restriction: The selected folder is restricted. '
+            'Please try a different folder or use the Default location.');
+      }
+      rethrow;
     }
-
-    // Mark as completed
-    await transferRef.update({
-      'status': AppConstants.statusCompleted,
-      'downloadProgress': 1.0,
-    });
-
-    return savedPaths;
   }
 
   // ─── Mark a transfer as expired (TTL cleanup) ─────────────────────────────

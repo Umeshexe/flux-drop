@@ -19,8 +19,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
-    // Request permissions
-    if (Platform.isIOS) {
+    // Request permissions (Skipped on iOS for Personal Team to avoid EXC_BAD_ACCESS)
+    if (!Platform.isIOS) {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
@@ -57,11 +57,13 @@ class NotificationService {
           ?.createNotificationChannel(channel);
     }
 
-    // Handle FCM foreground messages
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    if (!Platform.isIOS) {
+      // Handle FCM foreground messages
+      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // Handle background taps
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+      // Handle background taps
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+    }
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {

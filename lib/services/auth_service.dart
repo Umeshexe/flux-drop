@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -58,8 +59,12 @@ class AuthService {
 
     String? fcmToken;
     try {
-      fcmToken = await FirebaseMessaging.instance.getToken();
-      debugPrint('📲 [FCM] Token obtained: ${fcmToken?.substring(0, 20)}...');
+      if (!Platform.isIOS) {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        debugPrint('📲 [FCM] Token obtained: ${fcmToken?.substring(0, 20)}...');
+      } else {
+        fcmToken = null; // iOS Personal Team blocked
+      }
     } catch (e) {
       debugPrint('📲 [FCM] Token fetch failed: $e');
       fcmToken = null;
@@ -127,6 +132,7 @@ class AuthService {
 
   Future<void> _updateFcmToken(String uid) async {
     try {
+      if (Platform.isIOS) return; // Prevent native crash
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
         await _db

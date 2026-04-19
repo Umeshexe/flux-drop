@@ -45,6 +45,7 @@ class _SendScreenState extends State<SendScreen> {
 
   // ─── Recipient lookup ─────────────────────────────────────────────────────
   Future<void> _lookupRecipient() async {
+    FocusScope.of(context).unfocus();
     final code = _codeController.text.trim().toUpperCase();
 
     // ★ Invalid code – fast fail
@@ -298,8 +299,11 @@ class _SendScreenState extends State<SendScreen> {
   // ─── UI ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -531,7 +535,8 @@ class _SendScreenState extends State<SendScreen> {
           const SizedBox(height: 32),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

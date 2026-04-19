@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
@@ -19,6 +22,10 @@ class _TransfersScreenState extends State<TransfersScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _transferService = TransferService();
+  late final Stream<List<TransferModel>> _incomingStream = _transferService
+      .incomingTransfers(widget.user.uid);
+  late final Stream<List<TransferModel>> _outgoingStream = _transferService
+      .outgoingTransfers(widget.user.uid);
 
   // Track active downloads to show progress
   final Map<String, _DownloadProgress> _activeDownloads = {};
@@ -38,6 +45,18 @@ class _TransfersScreenState extends State<TransfersScreen>
   Future<void> _downloadTransfer(TransferModel transfer) async {
     if (_activeDownloads.containsKey(transfer.transferId)) return;
 
+    // Auto-skip folder picker on iOS to use native Share Sheet later
+    String? customPath;
+    if (!Platform.isIOS) {
+      final choice = await _showDownloadOptionsSheet();
+      if (choice == null) return;
+
+      if (choice == 'custom') {
+        customPath = await FilePicker.getDirectoryPath();
+        if (customPath == null) return; // User cancelled picker
+      }
+    }
+
     setState(() {
       _activeDownloads[transfer.transferId] = _DownloadProgress(
         currentFile: 0,
@@ -50,6 +69,7 @@ class _TransfersScreenState extends State<TransfersScreen>
     try {
       final paths = await _transferService.downloadTransfer(
         transfer: transfer,
+        customPath: customPath,
         onProgress: (fileIndex, totalFiles, bytesDownloaded, totalBytes) {
           if (mounted) {
             setState(() {
@@ -73,7 +93,16 @@ class _TransfersScreenState extends State<TransfersScreen>
       );
 
       if (mounted) {
-        _showSavedSheet(paths, transfer);
+        if (Platform.isIOS && paths.isNotEmpty) {
+          // Native WhatsApp style Share Sheet!
+          final size = MediaQuery.of(context).size;
+          await Share.shareXFiles(
+            paths.map((p) => XFile(p)).toList(),
+            sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
+          );
+        } else {
+          _showSavedSheet(paths, transfer);
+        }
       }
     } catch (e) {
       setState(() => _activeDownloads.remove(transfer.transferId));
@@ -85,6 +114,60 @@ class _TransfersScreenState extends State<TransfersScreen>
       );
     }
   }
+
+  Future<String?> _showDownloadOptionsSheet() {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppTheme.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Download Location',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Where would you like to save these files?',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              leading: const Icon(Icons.folder_shared_rounded,
+                  color: AppTheme.accent),
+              title: const Text('Default Private Folder'),
+              subtitle: Text(Platform.isIOS ? 'Access via "Files" app > On My iPhone > FluxDrop' : 'Safe, app-internal storage'),
+              onTap: () => Navigator.pop(context, 'default'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            if (!Platform.isIOS) ...[
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.folder_open_rounded,
+                    color: AppTheme.warning),
+                title: const Text('Choose Custom Folder'),
+                subtitle: const Text('Pick a folder (e.g., Downloads, Documents)'),
+                onTap: () => Navigator.pop(context, 'custom'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   void _showSavedSheet(List<String> paths, TransferModel transfer) {
     showModalBottomSheet(
@@ -108,39 +191,48 @@ class _TransfersScreenState extends State<TransfersScreen>
                     gradient: AppTheme.successGradient,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.download_done_rounded,
-                      color: Colors.white, size: 22),
+                  child: const Icon(
+                    Icons.download_done_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 14),
-                Text('Files Saved',
-                    style: Theme.of(context).textTheme.headlineLarge),
+                Text(
+                  'Files Saved',
+                  style: Theme.of(context).textTheme.headlineLarge,
+                ),
               ],
             ),
             const SizedBox(height: 16),
-            ...paths.map((p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_rounded,
-                          color: AppTheme.success, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          p.split('/').last,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+            ...paths.map(
+              (p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_rounded,
+                      color: AppTheme.success,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        p.split('/').last,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
             Text(
-              'Saved to FluxDrop folder in Documents',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall!
-                  .copyWith(color: AppTheme.textMuted),
+              'Saved to: ${paths.isNotEmpty ? paths.first.split('/').reversed.skip(1).take(2).toList().reversed.join('/') : 'FluxDrop folder'}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall!.copyWith(color: AppTheme.textMuted),
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -166,11 +258,15 @@ class _TransfersScreenState extends State<TransfersScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Transfers',
-                  style: Theme.of(context).textTheme.displayMedium),
+              Text(
+                'Transfers',
+                style: Theme.of(context).textTheme.displayMedium,
+              ),
               const SizedBox(height: 4),
-              Text('Incoming and outgoing file transfers',
-                  style: Theme.of(context).textTheme.bodyMedium),
+              Text(
+                'Incoming and outgoing file transfers',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
               const SizedBox(height: 20),
               // Tab bar
               Container(
@@ -187,7 +283,9 @@ class _TransfersScreenState extends State<TransfersScreen>
                   labelColor: Colors.white,
                   unselectedLabelColor: AppTheme.textMuted,
                   labelStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   dividerColor: Colors.transparent,
                   tabs: const [
@@ -218,11 +316,12 @@ class _TransfersScreenState extends State<TransfersScreen>
 
   Widget _buildIncomingList() {
     return StreamBuilder<List<TransferModel>>(
-      stream: _transferService.incomingTransfers(widget.user.uid),
+      stream: _incomingStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppTheme.accent));
+            child: CircularProgressIndicator(color: AppTheme.accent),
+          );
         }
         if (snap.hasError) {
           final err = snap.error.toString();
@@ -264,11 +363,12 @@ class _TransfersScreenState extends State<TransfersScreen>
 
   Widget _buildOutgoingList() {
     return StreamBuilder<List<TransferModel>>(
-      stream: _transferService.outgoingTransfers(widget.user.uid),
+      stream: _outgoingStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppTheme.accent));
+            child: CircularProgressIndicator(color: AppTheme.accent),
+          );
         }
         if (snap.hasError) {
           final err = snap.error.toString();
@@ -327,11 +427,9 @@ class _TransfersScreenState extends State<TransfersScreen>
             child: Icon(icon, color: AppTheme.textMuted, size: 32),
           ),
           const SizedBox(height: 16),
-          Text(title,
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
-          Text(subtitle,
-              style: Theme.of(context).textTheme.bodySmall),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -383,8 +481,8 @@ class _TransferCard extends StatelessWidget {
           color: isCompleted
               ? AppTheme.success.withAlpha(60)
               : isFailed || isExpired
-                  ? AppTheme.error.withAlpha(60)
-                  : AppTheme.border,
+              ? AppTheme.error.withAlpha(60)
+              : AppTheme.border,
         ),
       ),
       child: Column(
@@ -423,35 +521,40 @@ class _TransferCard extends StatelessWidget {
                 // Files list
                 if (transfer.files.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  ...transfer.files.take(3).map((f) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.insert_drive_file_rounded,
-                                size: 14, color: AppTheme.textMuted),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                f.name,
-                                style: Theme.of(context).textTheme.bodySmall,
-                                overflow: TextOverflow.ellipsis,
+                  ...transfer.files
+                      .take(3)
+                      .map(
+                        (f) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.insert_drive_file_rounded,
+                                size: 14,
+                                color: AppTheme.textMuted,
                               ),
-                            ),
-                            Text(
-                              TransferService.formatBytesStatic(f.sizeBytes),
-                              style:
-                                  Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  f.name,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                TransferService.formatBytesStatic(f.sizeBytes),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
                         ),
-                      )),
+                      ),
                   if (transfer.files.length > 3)
                     Text(
                       '+ ${transfer.files.length - 3} more file(s)',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall!
-                          .copyWith(color: AppTheme.accent),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall!.copyWith(color: AppTheme.accent),
                     ),
                 ],
 
@@ -462,7 +565,9 @@ class _TransferCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.warning.withAlpha(30),
                       borderRadius: BorderRadius.circular(8),
@@ -470,14 +575,15 @@ class _TransferCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.timer_outlined,
-                            size: 14, color: AppTheme.warning),
+                        const Icon(
+                          Icons.timer_outlined,
+                          size: 14,
+                          color: AppTheme.warning,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Expires: ${_formatExpiry(transfer.expiresAt)}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall!
+                          style: Theme.of(context).textTheme.bodySmall!
                               .copyWith(color: AppTheme.warning),
                         ),
                       ],
@@ -489,7 +595,9 @@ class _TransferCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.errorGlow,
                       borderRadius: BorderRadius.circular(8),
@@ -497,14 +605,15 @@ class _TransferCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline,
-                            size: 14, color: AppTheme.error),
+                        const Icon(
+                          Icons.error_outline,
+                          size: 14,
+                          color: AppTheme.error,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'This transfer has expired (24h TTL)',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall!
+                          style: Theme.of(context).textTheme.bodySmall!
                               .copyWith(color: AppTheme.error),
                         ),
                       ],
@@ -532,7 +641,7 @@ class _TransferCard extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: downloadProgress!.totalBytes > 0
                           ? downloadProgress!.bytesTransferred /
-                              downloadProgress!.totalBytes
+                                downloadProgress!.totalBytes
                           : null,
                       backgroundColor: AppTheme.bgCardElevated,
                       color: AppTheme.success,
@@ -571,23 +680,30 @@ class _TransferCard extends StatelessWidget {
             ),
           ],
 
-          // Download button (for incoming uploaded)
+          // Download button (for incoming uploaded or completed)
           if (isIncoming &&
-              transfer.status == TransferStatus.uploaded &&
-              !isDownloading &&
-              !isCompleted) ...[
+              (transfer.status == TransferStatus.uploaded ||
+                  transfer.status == TransferStatus.completed) &&
+              !isDownloading) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: onDownload,
-                  icon: const Icon(Icons.download_rounded, size: 18),
+                  icon: Icon(
+                    isCompleted
+                        ? Icons.replay_rounded
+                        : Icons.download_rounded,
+                    size: 18,
+                  ),
                   label: Text(
-                    'Download ${transfer.files.length} file(s) · ${TransferService.formatBytesStatic(transfer.totalBytes)}',
+                    isCompleted
+                        ? 'Download Again'
+                        : 'Download ${transfer.files.length} file(s) · ${TransferService.formatBytesStatic(transfer.totalBytes)}',
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.success,
+                    backgroundColor: isCompleted ? AppTheme.accent : AppTheme.success,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
@@ -695,11 +811,7 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
       ),
     );
   }
