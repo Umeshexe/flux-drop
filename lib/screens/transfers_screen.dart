@@ -45,18 +45,6 @@ class _TransfersScreenState extends State<TransfersScreen>
   Future<void> _downloadTransfer(TransferModel transfer) async {
     if (_activeDownloads.containsKey(transfer.transferId)) return;
 
-    // Auto-skip folder picker on iOS to use native Share Sheet later
-    String? customPath;
-    if (!Platform.isIOS) {
-      final choice = await _showDownloadOptionsSheet();
-      if (choice == null) return;
-
-      if (choice == 'custom') {
-        customPath = await FilePicker.getDirectoryPath();
-        if (customPath == null) return; // User cancelled picker
-      }
-    }
-
     setState(() {
       _activeDownloads[transfer.transferId] = _DownloadProgress(
         currentFile: 0,
@@ -69,7 +57,6 @@ class _TransfersScreenState extends State<TransfersScreen>
     try {
       final paths = await _transferService.downloadTransfer(
         transfer: transfer,
-        customPath: customPath,
         onProgress: (fileIndex, totalFiles, bytesDownloaded, totalBytes) {
           if (mounted) {
             setState(() {
@@ -92,16 +79,36 @@ class _TransfersScreenState extends State<TransfersScreen>
             '${transfer.files.length} file(s) from ${transfer.senderCode} saved',
       );
 
-      if (mounted) {
-        if (Platform.isIOS && paths.isNotEmpty) {
-          // Native WhatsApp style Share Sheet!
-          final size = MediaQuery.of(context).size;
-          await Share.shareXFiles(
-            paths.map((p) => XFile(p)).toList(),
-            sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
+      if (mounted && paths.isNotEmpty) {
+        // Native Share Sheet on both iOS and Android
+        final size = MediaQuery.of(context).size;
+        final result = await Share.shareXFiles(
+          paths.map((p) => XFile(p)).toList(),
+          sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
+        );
+
+        // Always delete the temp file from app's private storage after Share Sheet closes.
+        // User either saved it to their preferred location, or dismissed (in which case
+        // we revert so they can try again). Either way, temp copy is no longer needed.
+        for (final p in paths) {
+          try { await File(p).delete(); } catch (_) {}
+        }
+        // Also try to clean up the parent transfer dir (if empty)
+        if (paths.isNotEmpty) {
+          try {
+            final parentDir = Directory(paths.first).parent;
+            if (await parentDir.exists()) await parentDir.delete(recursive: true);
+          } catch (_) {}
+        }
+
+        if (result.status == ShareResultStatus.dismissed && mounted) {
+          // User dismissed — revert status so they can download again
+          Fluttertoast.showToast(
+            msg: 'Dismissed. Tap "Download Again" to retry.',
+            backgroundColor: AppTheme.bgCard,
+            textColor: Colors.white,
+            toastLength: Toast.LENGTH_LONG,
           );
-        } else {
-          _showSavedSheet(paths, transfer);
         }
       }
     } catch (e) {

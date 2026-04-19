@@ -91,5 +91,8 @@
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<!-- Prevent native FCM from auto-registering APNs on startup (no Push entitlement on Personal Team) -->
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<false/>
 </dict>
 </plist>
