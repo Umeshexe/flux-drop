@@ -284,7 +284,12 @@ class _SendScreenState extends State<SendScreen> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+        FocusManager.instance.primaryFocus?.unfocus();
+      }
+    });
   }
 
   void _showSnack(String msg, {required bool isError}) {

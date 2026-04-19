@@ -50,6 +50,7 @@ dependencies:
   share_plus: ^10.1.2
   rxdart: ^0.28.0
   google_fonts: ^8.0.2
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:

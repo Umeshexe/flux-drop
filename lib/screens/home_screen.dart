@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/constants.dart';
 import '../core/theme.dart';
+import '../models/transfer_model.dart';
 import '../models/user_model.dart';
 import '../services/transfer_service.dart';
 import 'send_screen.dart';
+import 'settings_screen.dart';
 import 'transfers_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,10 +20,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   late AnimationController _codeRevealController;
   late Animation<double> _codeReveal;
   bool _codeCopied = false;
+
+  // Global incoming transfer state
+  Stream<List<TransferModel>>? _incomingStream;
+  List<TransferModel> _activeIncoming = [];
 
   @override
   void initState() {
@@ -34,6 +42,9 @@ class _HomeScreenState extends State<HomeScreen>
       curve: Curves.easeOutCubic,
     );
 
+    // Listen globally for active incoming transfers
+    _incomingStream = TransferService().incomingTransfers(widget.user.uid);
+
     // Expire old transfers on launch
     TransferService().expireOldTransfers();
   }
@@ -44,56 +55,171 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  Widget _buildPage() {
+  String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Widget _buildPage(List<TransferModel> active) {
     switch (_selectedIndex) {
       case 0:
-        return _buildHome();
+        return _buildHome(active);
       case 1:
         return SendScreen(user: widget.user);
       case 2:
         return TransfersScreen(user: widget.user);
       default:
-        return _buildHome();
+        return _buildHome(active);
     }
   }
 
-  Widget _buildHome() {
+  Widget _buildHome(List<TransferModel> active) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          // Header
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: AppTheme.accentGradient,
+          // Header — tap logo to open Drawer
+          GestureDetector(
+            onTap: () => _scaffoldKey.currentState?.openDrawer(),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: AppTheme.accentGradient,
+                  ),
+                  child: const Icon(Icons.bolt_rounded,
+                      color: Colors.white, size: 22),
                 ),
-                child: const Icon(Icons.bolt_rounded,
-                    color: Colors.white, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'FluxDrop',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  Text(
-                    'Real-time file sharing',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'FluxDrop',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      'Real-time file sharing',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                const Icon(Icons.settings_rounded,
+                    color: AppTheme.textMuted, size: 20),
+              ],
+            ),
           ),
-          const SizedBox(height: 32),
+          // ─── Active transfer card (matches Transfers screen style) ────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            child: active.isEmpty
+                ? const SizedBox.shrink()
+                : GestureDetector(
+                    onTap: () => setState(() => _selectedIndex = 2),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.bgCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppTheme.accent.withAlpha(80),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                // Pulsing dot
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accent,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppTheme.accent.withAlpha(120),
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    active.first.status == TransferStatus.uploading
+                                        ? 'Incoming from ${active.first.senderCode}'
+                                        : 'Downloading from ${active.first.senderCode}',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  active.first.status == TransferStatus.uploading
+                                      ? _fmtSize(active.first.totalBytes)
+                                      : _fmtSize(active.first.totalBytes),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.accent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // Progress bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: active.first.status == TransferStatus.uploading
+                                    ? (active.first.uploadProgress > 0
+                                        ? active.first.uploadProgress
+                                        : null)
+                                    : null,
+                                backgroundColor: AppTheme.bgCardElevated,
+                                color: AppTheme.accent,
+                                minHeight: 4,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  active.first.status == TransferStatus.uploading
+                                      ? 'Receiving… ${(active.first.uploadProgress * 100).toStringAsFixed(0)}%'
+                                      : 'Downloading files…',
+                                  style: Theme.of(context).textTheme.bodySmall!
+                                      .copyWith(color: AppTheme.accent, fontSize: 11),
+                                ),
+                                Text(
+                                  '${active.first.files.length} file(s)',
+                                  style: Theme.of(context).textTheme.bodySmall!
+                                      .copyWith(fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 20),
 
           // Your code card
           _YourCodeCard(
@@ -171,14 +297,30 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bg,
-      body: SafeArea(child: _buildPage()),
-      bottomNavigationBar: _buildNavBar(),
+    return StreamBuilder<List<TransferModel>>(
+      stream: _incomingStream,
+      builder: (context, snap) {
+        final incoming = snap.data ?? [];
+        final active = incoming.where((t) =>
+          t.status == TransferStatus.uploading ||
+          t.status == TransferStatus.downloading
+        ).toList();
+        final hasBadge = incoming.any((t) =>
+          t.status == TransferStatus.uploading ||
+          t.status == TransferStatus.uploaded
+        );
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: AppTheme.bg,
+          drawer: _buildDrawer(),
+          body: SafeArea(child: _buildPage(active)),
+          bottomNavigationBar: _buildNavBar(hasBadge: hasBadge),
+        );
+      },
     );
   }
 
-  Widget _buildNavBar() {
+  Widget _buildNavBar({bool hasBadge = false}) {
     return Container(
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
@@ -205,10 +347,107 @@ class _HomeScreenState extends State<HomeScreen>
                 icon: Icons.history_rounded,
                 label: 'Transfers',
                 selected: _selectedIndex == 2,
+                showBadge: hasBadge,
                 onTap: () => setState(() => _selectedIndex = 2),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: AppTheme.bgCard,
+      width: MediaQuery.of(context).size.width * 0.75, // 75% of screen
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: AppTheme.accentGradient,
+                    ),
+                    child: const Icon(Icons.bolt_rounded,
+                        color: Colors.white, size: 30),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'FluxDrop',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.successGlow,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8, height: 8,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.success,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Online — Firebase Connected',
+                          style: TextStyle(
+                            color: AppTheme.success,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: AppTheme.border, height: 1),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              leading: const Icon(Icons.settings_rounded, color: AppTheme.textPrimary),
+              title: const Text('Settings', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context); // close drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPanel()),
+                );
+              },
+            ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              leading: const Icon(Icons.info_outline_rounded, color: AppTheme.textPrimary),
+              title: const Text('About FluxDrop', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                // Can show an about dialog here
+              },
+            ),
+            const Spacer(),
+            const Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Text(
+                'Version 1.0.0',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -435,6 +674,7 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
+  final bool showBadge;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -442,6 +682,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.showBadge = false,
   });
 
   @override
@@ -460,10 +701,28 @@ class _NavItem extends StatelessWidget {
                 color: selected ? AppTheme.accentGlow : Colors.transparent,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                icon,
-                color: selected ? AppTheme.accent : AppTheme.textMuted,
-                size: 24,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    icon,
+                    color: selected ? AppTheme.accent : AppTheme.textMuted,
+                    size: 24,
+                  ),
+                  if (showBadge)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.accent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 2),
@@ -471,8 +730,7 @@ class _NavItem extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight:
-                    selected ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 color: selected ? AppTheme.accent : AppTheme.textMuted,
               ),
             ),

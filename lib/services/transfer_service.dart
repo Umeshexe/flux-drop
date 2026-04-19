@@ -30,6 +30,7 @@ class TransferService {
         .where(
           'status',
           whereIn: [
+            AppConstants.statusUploading,   // receiver sees live upload progress
             AppConstants.statusUploaded,
             AppConstants.statusDownloading,
             AppConstants.statusCompleted,

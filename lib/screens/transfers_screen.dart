@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
@@ -45,6 +47,13 @@ class _TransfersScreenState extends State<TransfersScreen>
   Future<void> _downloadTransfer(TransferModel transfer) async {
     if (_activeDownloads.containsKey(transfer.transferId)) return;
 
+    // On Android: check if user has set a default save path in Settings
+    String? customPath;
+    if (Platform.isAndroid) {
+      final prefs = await SharedPreferences.getInstance();
+      customPath = prefs.getString('defaultSavePath');
+    }
+
     setState(() {
       _activeDownloads[transfer.transferId] = _DownloadProgress(
         currentFile: 0,
@@ -57,6 +66,7 @@ class _TransfersScreenState extends State<TransfersScreen>
     try {
       final paths = await _transferService.downloadTransfer(
         transfer: transfer,
+        customPath: customPath,
         onProgress: (fileIndex, totalFiles, bytesDownloaded, totalBytes) {
           if (mounted) {
             setState(() {
@@ -80,35 +90,41 @@ class _TransfersScreenState extends State<TransfersScreen>
       );
 
       if (mounted && paths.isNotEmpty) {
-        // Native Share Sheet on both iOS and Android
-        final size = MediaQuery.of(context).size;
-        final result = await Share.shareXFiles(
-          paths.map((p) => XFile(p)).toList(),
-          sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
-        );
-
-        // Always delete the temp file from app's private storage after Share Sheet closes.
-        // User either saved it to their preferred location, or dismissed (in which case
-        // we revert so they can try again). Either way, temp copy is no longer needed.
-        for (final p in paths) {
-          try { await File(p).delete(); } catch (_) {}
-        }
-        // Also try to clean up the parent transfer dir (if empty)
-        if (paths.isNotEmpty) {
-          try {
-            final parentDir = Directory(paths.first).parent;
-            if (await parentDir.exists()) await parentDir.delete(recursive: true);
-          } catch (_) {}
-        }
-
-        if (result.status == ShareResultStatus.dismissed && mounted) {
-          // User dismissed — revert status so they can download again
+        // If Android user set a default path → saved silently, no sheet needed
+        if (Platform.isAndroid && customPath != null) {
           Fluttertoast.showToast(
-            msg: 'Dismissed. Tap "Download Again" to retry.',
-            backgroundColor: AppTheme.bgCard,
+            msg: '✅ Saved to ${customPath!.split('/').last}',
+            backgroundColor: AppTheme.success,
             textColor: Colors.white,
             toastLength: Toast.LENGTH_LONG,
           );
+        } else {
+          // Native Share Sheet (iOS always, Android if no default path set)
+          final size = MediaQuery.of(context).size;
+          final result = await Share.shareXFiles(
+            paths.map((p) => XFile(p)).toList(),
+            sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
+          );
+
+          // Clean up temp files after Share Sheet closes
+          for (final p in paths) {
+            try { await File(p).delete(); } catch (_) {}
+          }
+          if (paths.isNotEmpty) {
+            try {
+              final parentDir = Directory(paths.first).parent;
+              if (await parentDir.exists()) await parentDir.delete(recursive: true);
+            } catch (_) {}
+          }
+
+          if (result.status == ShareResultStatus.dismissed && mounted) {
+            Fluttertoast.showToast(
+              msg: 'Dismissed. Tap "Download Again" to retry.',
+              backgroundColor: AppTheme.bgCard,
+              textColor: Colors.white,
+              toastLength: Toast.LENGTH_LONG,
+            );
+          }
         }
       }
     } catch (e) {
@@ -177,6 +193,7 @@ class _TransfersScreenState extends State<TransfersScreen>
 
 
   void _showSavedSheet(List<String> paths, TransferModel transfer) {
+    FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.bgCard,
@@ -252,7 +269,10 @@ class _TransfersScreenState extends State<TransfersScreen>
           ],
         ),
       ),
-    );
+    ).then((_) {
+      // Ensure keyboard never reopens after sheet is dismissed
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
   }
 
   @override
@@ -631,7 +651,7 @@ class _TransferCard extends StatelessWidget {
             ),
           ),
 
-          // Progress bar
+          // Progress bar (receiver downloading)
           if (isDownloading && downloadProgress != null) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -660,8 +680,53 @@ class _TransferCard extends StatelessWidget {
             ),
           ],
 
-          // Upload progress (for outgoing)
-          if (transfer.status == TransferStatus.uploading &&
+          // Receiver-side: sender is still uploading — show live progress
+          if (isIncoming && transfer.status == TransferStatus.uploading) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 10, height: 10,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppTheme.accent),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Receiving… ${(transfer.uploadProgress * 100).toStringAsFixed(0)}%',
+                        style: Theme.of(context).textTheme.bodySmall!
+                            .copyWith(color: AppTheme.accent),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: transfer.uploadProgress > 0
+                          ? transfer.uploadProgress : null,
+                      backgroundColor: AppTheme.bgCardElevated,
+                      color: AppTheme.accent,
+                      minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Download will be available once upload completes',
+                    style: Theme.of(context).textTheme.bodySmall!
+                        .copyWith(fontSize: 10, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Upload progress (sender side only)
+          if (!isIncoming &&
+              transfer.status == TransferStatus.uploading &&
               transfer.uploadProgress < 1.0) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
