@@ -17,7 +17,15 @@ import '../services/transfer_service.dart';
 
 class TransfersScreen extends StatefulWidget {
   final UserModel user;
-  const TransfersScreen({super.key, required this.user});
+  final String? autoStartTransferId;
+  final VoidCallback? onAutoStartConsumed;
+
+  const TransfersScreen({
+    super.key,
+    required this.user,
+    this.autoStartTransferId,
+    this.onAutoStartConsumed,
+  });
 
   @override
   State<TransfersScreen> createState() => _TransfersScreenState();
@@ -37,6 +45,7 @@ class _TransfersScreenState extends State<TransfersScreen>
   final Map<String, _DownloadProgress> _activeDownloads = {};
   // Track transfers already fully downloaded — prevent duplicate saves
   final Set<String> _completedDownloads = {};
+  String? _lastAutoStartedTransferId;
   static const _storageChannel = MethodChannel('fluxdrop/storage');
 
   @override
@@ -187,6 +196,39 @@ class _TransfersScreenState extends State<TransfersScreen>
         toastLength: Toast.LENGTH_LONG,
       );
     }
+  }
+
+  void _maybeAutoStartTransfer(List<TransferModel> transfers) {
+    final targetId = widget.autoStartTransferId;
+    if (targetId == null || _lastAutoStartedTransferId == targetId) {
+      return;
+    }
+
+    TransferModel? transfer;
+    for (final item in transfers) {
+      if (item.transferId == targetId) {
+        transfer = item;
+        break;
+      }
+    }
+    if (transfer == null) {
+      return;
+    }
+
+    if (transfer.status != TransferStatus.uploaded) {
+      widget.onAutoStartConsumed?.call();
+      _lastAutoStartedTransferId = targetId;
+      return;
+    }
+
+    _lastAutoStartedTransferId = targetId;
+    widget.onAutoStartConsumed?.call();
+    final transferToStart = transfer;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _downloadTransfer(transferToStart);
+      }
+    });
   }
 
   /// Shows a cellular data warning for large transfers.
@@ -623,6 +665,7 @@ class _TransfersScreenState extends State<TransfersScreen>
           );
         }
         final transfers = snap.data ?? [];
+        _maybeAutoStartTransfer(transfers);
         if (transfers.isEmpty) {
           return _buildEmptyState(
             icon: Icons.inbox_rounded,
@@ -1087,7 +1130,7 @@ class _TransferCard extends StatelessWidget {
                   ],
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: transfer.status == TransferStatus.completed
                           ? () => onDownload?.call()
                           : onDownload,
@@ -1097,10 +1140,11 @@ class _TransferCard extends StatelessWidget {
                             : Icons.check_circle_rounded,
                         size: 18,
                       ),
-                      label: Text(isCompleted ? 'Download Again' : 'Accept'),
-                      style: ElevatedButton.styleFrom(
+                      label: Text(isCompleted ? 'Download Again' : 'Download'),
+                      style: OutlinedButton.styleFrom(
                         backgroundColor: AppTheme.success,
                         foregroundColor: Colors.white,
+                        side: const BorderSide(color: AppTheme.success),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
@@ -1136,7 +1180,7 @@ class _TransferCard extends StatelessWidget {
         case TransferStatus.uploading:
           return 'Receiving';
         case TransferStatus.uploaded:
-          return 'Ready to accept';
+          return 'Ready to download';
         case TransferStatus.downloading:
           return 'Downloading';
         case TransferStatus.completed:
@@ -1152,7 +1196,7 @@ class _TransferCard extends StatelessWidget {
       case TransferStatus.uploading:
         return 'Uploading...';
       case TransferStatus.uploaded:
-        return 'Waiting for receiver';
+        return 'Waiting for download';
       case TransferStatus.downloading:
         return 'Receiver downloading';
       case TransferStatus.completed:

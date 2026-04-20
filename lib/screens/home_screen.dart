@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
@@ -26,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _codeRevealController;
   late Animation<double> _codeReveal;
   bool _codeCopied = false;
+  String? _autoStartTransferId;
 
   // Global incoming transfer state
   Stream<List<TransferModel>>? _incomingStream;
@@ -68,20 +71,55 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  Widget _buildPage(List<TransferModel> active) {
+  Widget _buildPage(List<TransferModel> active, TransferModel? pendingReady) {
     switch (_selectedIndex) {
       case 0:
-        return _buildHome(active);
+        return _buildHome(active, pendingReady);
       case 1:
         return SendScreen(user: widget.user);
       case 2:
-        return TransfersScreen(user: widget.user);
+        return TransfersScreen(
+          user: widget.user,
+          autoStartTransferId: _autoStartTransferId,
+          onAutoStartConsumed: () {
+            if (mounted) {
+              setState(() => _autoStartTransferId = null);
+            }
+          },
+        );
       default:
-        return _buildHome(active);
+        return _buildHome(active, pendingReady);
     }
   }
 
-  Widget _buildHome(List<TransferModel> active) {
+  Future<void> _acceptIncomingTransfer(TransferModel transfer) async {
+    setState(() {
+      _autoStartTransferId = transfer.transferId;
+      _selectedIndex = 2;
+    });
+    Fluttertoast.showToast(
+      msg: 'Opening Transfers to start download...',
+      backgroundColor: AppTheme.success,
+      textColor: Colors.white,
+      toastLength: Toast.LENGTH_SHORT,
+    );
+  }
+
+  Future<void> _declineIncomingTransfer(TransferModel transfer) async {
+    await FirebaseFirestore.instance
+        .collection('transfers')
+        .doc(transfer.transferId)
+        .update({'status': 'rejected'});
+    if (!mounted) return;
+    Fluttertoast.showToast(
+      msg: 'Transfer declined',
+      backgroundColor: AppTheme.error,
+      textColor: Colors.white,
+      toastLength: Toast.LENGTH_SHORT,
+    );
+  }
+
+  Widget _buildHome(List<TransferModel> active, TransferModel? pendingReady) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
@@ -128,6 +166,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ],
             ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            child: pendingReady == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: _IncomingReadyCard(
+                      transfer: pendingReady,
+                      formatSize: _fmtSize,
+                      onAccept: () => _acceptIncomingTransfer(pendingReady),
+                      onDecline: () => _declineIncomingTransfer(pendingReady),
+                      onOpenTransfers: () => setState(() => _selectedIndex = 2),
+                    ),
+                  ),
           ),
           // ─── Active transfer card (matches Transfers screen style) ────
           AnimatedSize(
@@ -176,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   child: Text(
                                     active.first.status ==
                                             TransferStatus.uploading
-                                        ? 'Incoming from ${active.first.senderCode}'
+                                        ? 'Receiving from ${active.first.senderCode}'
                                         : 'Downloading from ${active.first.senderCode}',
                                     style: const TextStyle(
                                       fontSize: 14,
@@ -331,6 +385,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   t.status == TransferStatus.downloading,
             )
             .toList();
+        final ready = incoming
+            .where((t) => t.status == TransferStatus.uploaded)
+            .toList();
+        final TransferModel? latestActive = active.isEmpty
+            ? null
+            : active.first;
+        final TransferModel? latestReady = ready.isEmpty ? null : ready.first;
+        final TransferModel? homePendingReady = latestActive == null
+            ? latestReady
+            : null;
         final hasBadge = incoming.any(
           (t) =>
               t.status == TransferStatus.uploading ||
@@ -340,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           key: _scaffoldKey,
           backgroundColor: AppTheme.bg,
           drawer: _buildDrawer(),
-          body: SafeArea(child: _buildPage(active)),
+          body: SafeArea(child: _buildPage(active, homePendingReady)),
           bottomNavigationBar: _buildNavBar(hasBadge: hasBadge),
         );
       },
@@ -625,6 +689,147 @@ class _YourCodeCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _IncomingReadyCard extends StatelessWidget {
+  final TransferModel transfer;
+  final String Function(int bytes) formatSize;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+  final VoidCallback onOpenTransfers;
+
+  const _IncomingReadyCard({
+    required this.transfer,
+    required this.formatSize,
+    required this.onAccept,
+    required this.onDecline,
+    required this.onOpenTransfers,
+  });
+
+  String _formatExpiry(DateTime expiresAt) {
+    final diff = expiresAt.difference(DateTime.now());
+    if (diff.isNegative) return 'Expired';
+    if (diff.inHours > 0) {
+      return 'Expires in ${diff.inHours}h ${diff.inMinutes % 60}m';
+    }
+    return 'Expires in ${diff.inMinutes}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.warning.withAlpha(90)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withAlpha(28),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.inbox_rounded, color: AppTheme.warning),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'New transfer from ${transfer.senderCode}',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${transfer.files.length} file(s) • ${formatSize(transfer.totalBytes)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.bgCardElevated,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ready to download',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium!.copyWith(color: AppTheme.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Accept to download this transfer to your device, or decline to reject it.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatExpiry(transfer.expiresAt),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall!.copyWith(color: AppTheme.warning),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onDecline,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: const Text('Decline'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.error,
+                    side: const BorderSide(color: AppTheme.error),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onAccept,
+                  icon: const Icon(Icons.check_circle_rounded, size: 18),
+                  label: const Text('Accept'),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: AppTheme.success,
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: AppTheme.success),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: onOpenTransfers,
+            child: const Text('Open Transfers for details'),
+          ),
+        ],
       ),
     );
   }
