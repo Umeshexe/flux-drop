@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:neopop/neopop.dart';
 
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
 import '../services/notification_service.dart';
 import '../services/transfer_service.dart';
+import '../widgets/flux_ui.dart';
 import 'send_screen.dart';
 import 'settings_screen.dart';
 import 'transfers_screen.dart';
@@ -39,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _selectedIndex = widget.initialTabIndex;
     _codeRevealController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: Duration(milliseconds: 700),
     )..forward();
     _codeReveal = CurvedAnimation(
       parent: _codeRevealController,
@@ -119,13 +121,79 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Future<void> _showThemeSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.bgCard,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppTheme.cardRadiusLarge),
+        ),
+      ),
+      builder: (ctx) => ValueListenableBuilder<FluxThemeMode>(
+        valueListenable: AppTheme.modeNotifier,
+        builder: (context, currentMode, _) {
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'App Theme',
+                    style: Theme.of(context).textTheme.headlineLarge,
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Switch between the current FluxDrop look and a NeoPOP visual mode.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  SizedBox(height: 18),
+                  _ThemeOptionCard(
+                    mode: FluxThemeMode.classic,
+                    currentMode: currentMode,
+                    title: 'Current',
+                    subtitle: 'Rounded, softer, neon-glow focused.',
+                    previewGradient: LinearGradient(
+                      colors: [Color(0xFF6C63FF), Color(0xFF9D55FF)],
+                    ),
+                    onTap: () async {
+                      await AppTheme.setThemeMode(FluxThemeMode.classic);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  _ThemeOptionCard(
+                    mode: FluxThemeMode.neoPop,
+                    currentMode: currentMode,
+                    title: 'NeoPOP',
+                    subtitle: 'Sharper edges, harder shadows, louder contrast.',
+                    previewGradient: LinearGradient(
+                      colors: [Color(0xFFFFF176), Color(0xFFFFC107)],
+                    ),
+                    onTap: () async {
+                      await AppTheme.setThemeMode(FluxThemeMode.neoPop);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHome(List<TransferModel> active, TransferModel? pendingReady) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           // Header — tap logo to open Drawer
           GestureDetector(
             onTap: () => _scaffoldKey.currentState?.openDrawer(),
@@ -138,13 +206,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     shape: BoxShape.circle,
                     gradient: AppTheme.accentGradient,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.bolt_rounded,
                     color: Colors.white,
                     size: 22,
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -158,8 +226,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ],
                 ),
-                const Spacer(),
-                const Icon(
+                Spacer(),
+                Icon(
                   Icons.settings_rounded,
                   color: AppTheme.textMuted,
                   size: 20,
@@ -168,12 +236,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
           AnimatedSize(
-            duration: const Duration(milliseconds: 300),
+            duration: Duration(milliseconds: 300),
             curve: Curves.easeOut,
             child: pendingReady == null
-                ? const SizedBox.shrink()
+                ? SizedBox.shrink()
                 : Padding(
-                    padding: const EdgeInsets.only(top: 16),
+                    padding: EdgeInsets.only(top: 16),
                     child: _IncomingReadyCard(
                       transfer: pendingReady,
                       formatSize: _fmtSize,
@@ -185,23 +253,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           // ─── Active transfer card (matches Transfers screen style) ────
           AnimatedSize(
-            duration: const Duration(milliseconds: 300),
+            duration: Duration(milliseconds: 300),
             curve: Curves.easeOut,
             child: active.isEmpty
-                ? const SizedBox.shrink()
+                ? SizedBox.shrink()
                 : GestureDetector(
                     onTap: () => setState(() => _selectedIndex = 2),
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.bgCard,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppTheme.accent.withAlpha(80),
-                          ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.only(top: 16),
+                      child: FluxSurface(
+                        borderColor: AppTheme.accent.withAlpha(80),
+                        padding: EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
                         ),
@@ -210,7 +272,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           children: [
                             Row(
                               children: [
-                                // Pulsing dot
                                 Container(
                                   width: 8,
                                   height: 8,
@@ -225,14 +286,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     active.first.status ==
                                             TransferStatus.uploading
                                         ? 'Receiving from ${active.first.senderCode}'
                                         : 'Downloading from ${active.first.senderCode}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
                                       color: AppTheme.textPrimary,
@@ -240,11 +301,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   ),
                                 ),
                                 Text(
-                                  active.first.status ==
-                                          TransferStatus.uploading
-                                      ? _fmtSize(active.first.totalBytes)
-                                      : _fmtSize(active.first.totalBytes),
-                                  style: const TextStyle(
+                                  _fmtSize(active.first.totalBytes),
+                                  style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
                                     color: AppTheme.accent,
@@ -252,8 +310,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            // Progress bar
+                            SizedBox(height: 8),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(4),
                               child: LinearProgressIndicator(
@@ -269,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 minHeight: 4,
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            SizedBox(height: 6),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -298,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
 
           // Your code card
           _YourCodeCard(
@@ -310,16 +367,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ClipboardData(text: widget.user.shortCode),
               );
               setState(() => _codeCopied = true);
-              await Future.delayed(const Duration(seconds: 2));
+              await Future.delayed(Duration(seconds: 2));
               if (mounted) setState(() => _codeCopied = false);
             },
           ),
 
-          const SizedBox(height: 24),
+          SizedBox(height: 24),
 
           // Quick actions
           Text('Quick Actions', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -331,7 +388,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   onTap: () => setState(() => _selectedIndex = 1),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: _ActionCard(
                   icon: Icons.history_rounded,
@@ -343,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: 24),
 
           // Info cards
           _InfoCard(
@@ -352,21 +409,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             body:
                 'All transfers use TLS encryption. Files are verified with SHA-256 checksums.',
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           _InfoCard(
             icon: Icons.access_time_rounded,
             title: '24-Hour Queue',
             body:
                 'If the recipient is offline, your transfer waits up to 24 hours before expiring.',
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           _InfoCard(
             icon: Icons.storage_rounded,
             title: 'Up to 500 MB',
             body:
                 'Send files up to 500 MB in a single transfer. Multiple files supported.',
           ),
-          const SizedBox(height: 32),
+          SizedBox(height: 32),
         ],
       ),
     );
@@ -412,36 +469,82 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildNavBar({bool hasBadge = false}) {
+    final isNeo = AppTheme.isNeoPop;
+    if (!isNeo) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
+          color: AppTheme.bgCard,
+        ),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 64,
+            child: Row(
+              children: [
+                _NavItem(
+                  icon: Icons.home_rounded,
+                  label: 'Home',
+                  selected: _selectedIndex == 0,
+                  onTap: () => setState(() => _selectedIndex = 0),
+                ),
+                _NavItem(
+                  icon: Icons.upload_rounded,
+                  label: 'Send',
+                  selected: _selectedIndex == 1,
+                  onTap: () => setState(() => _selectedIndex = 1),
+                ),
+                _NavItem(
+                  icon: Icons.history_rounded,
+                  label: 'Transfers',
+                  selected: _selectedIndex == 2,
+                  showBadge: hasBadge,
+                  onTap: () => setState(() => _selectedIndex = 2),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppTheme.border, width: 1)),
-        color: AppTheme.bgCard,
-      ),
+      color: AppTheme.bg,
       child: SafeArea(
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: [
-              _NavItem(
-                icon: Icons.home_rounded,
-                label: 'Home',
-                selected: _selectedIndex == 0,
-                onTap: () => setState(() => _selectedIndex = 0),
-              ),
-              _NavItem(
-                icon: Icons.upload_rounded,
-                label: 'Send',
-                selected: _selectedIndex == 1,
-                onTap: () => setState(() => _selectedIndex = 1),
-              ),
-              _NavItem(
-                icon: Icons.history_rounded,
-                label: 'Transfers',
-                selected: _selectedIndex == 2,
-                showBadge: hasBadge,
-                onTap: () => setState(() => _selectedIndex = 2),
-              ),
-            ],
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.zero,
+            ),
+            padding: EdgeInsets.zero,
+            child: Row(
+              children: [
+                _NavItem(
+                  icon: Icons.home_rounded,
+                  label: 'Home',
+                  selected: _selectedIndex == 0,
+                  onTap: () => setState(() => _selectedIndex = 0),
+                ),
+                SizedBox(width: 10),
+                _NavItem(
+                  icon: Icons.upload_rounded,
+                  label: 'Send',
+                  selected: _selectedIndex == 1,
+                  onTap: () => setState(() => _selectedIndex = 1),
+                ),
+                SizedBox(width: 10),
+                _NavItem(
+                  icon: Icons.history_rounded,
+                  label: 'Transfers',
+                  selected: _selectedIndex == 2,
+                  showBadge: hasBadge,
+                  onTap: () => setState(() => _selectedIndex = 2),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -449,15 +552,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildDrawer() {
+    final isNeo = AppTheme.isNeoPop;
     return Drawer(
-      backgroundColor: AppTheme.bgCard,
-      width: MediaQuery.of(context).size.width * 0.75, // 75% of screen
+      backgroundColor: isNeo ? Colors.black : AppTheme.bgCard,
+      shape: isNeo
+          ? const RoundedRectangleBorder(borderRadius: BorderRadius.zero)
+          : null,
+      width: MediaQuery.of(context).size.width * 0.75,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -468,67 +575,102 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       shape: BoxShape.circle,
                       gradient: AppTheme.accentGradient,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.bolt_rounded,
                       color: Colors.white,
                       size: 30,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Text(
                     'FluxDrop',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 30,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.successGlow,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 9,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.success,
-                            shape: BoxShape.circle,
-                          ),
+                  SizedBox(height: 6),
+                  if (isNeo)
+                    NeoPopCard(
+                      color: AppTheme.bgCard,
+                      borderColor: AppTheme.success,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                        const SizedBox(width: 8),
-                        const Flexible(
-                          child: Text(
-                            'Firebase Connected',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: AppTheme.success,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Firebase Connected',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppTheme.success,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.successGlow,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 9,
+                            height: 8,
+                            decoration: BoxDecoration(
                               color: AppTheme.success,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                              shape: BoxShape.circle,
                             ),
                           ),
-                        ),
-                      ],
+                          SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Firebase Connected',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppTheme.success,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
-            const Divider(color: AppTheme.border, height: 1),
+            Divider(color: AppTheme.border, height: 1),
             ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 8,
-              ),
-              leading: const Icon(
+              contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              leading: Icon(
                 Icons.settings_rounded,
                 color: AppTheme.textPrimary,
               ),
-              title: const Text(
+              title: Text(
                 'Settings',
                 style: TextStyle(color: AppTheme.textPrimary, fontSize: 16),
               ),
@@ -536,20 +678,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Navigator.pop(context); // close drawer
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const SettingsPanel()),
+                  MaterialPageRoute(builder: (_) => SettingsPanel()),
                 );
               },
             ),
             ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 8,
+              contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              leading: Icon(Icons.palette_rounded, color: AppTheme.textPrimary),
+              title: Text(
+                'App Theme',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 16),
               ),
-              leading: const Icon(
+              subtitle: ValueListenableBuilder<FluxThemeMode>(
+                valueListenable: AppTheme.modeNotifier,
+                builder: (context, mode, _) => Text(
+                  mode.label,
+                  style: TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Future<void>.delayed(Duration.zero, _showThemeSheet);
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              leading: Icon(
                 Icons.info_outline_rounded,
                 color: AppTheme.textPrimary,
               ),
-              title: const Text(
+              title: Text(
                 'About FluxDrop',
                 style: TextStyle(color: AppTheme.textPrimary, fontSize: 16),
               ),
@@ -558,8 +720,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 // Can show an about dialog here
               },
             ),
-            const Spacer(),
-            const Padding(
+            Spacer(),
+            Padding(
               padding: EdgeInsets.all(24.0),
               child: Text(
                 'Version 1.0.0',
@@ -590,6 +752,7 @@ class _YourCodeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isNeo = AppTheme.isNeoPop;
     return AnimatedBuilder(
       animation: animation,
       builder: (_, child) => Transform.translate(
@@ -598,94 +761,127 @@ class _YourCodeCard extends StatelessWidget {
       ),
       child: Container(
         decoration: BoxDecoration(
-          gradient: AppTheme.accentGradient,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.accent.withAlpha(80),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          // NeoPOP: flat bg with hard accent border. Classic: gradient with glow.
+          gradient: isNeo ? null : AppTheme.accentGradient,
+          color: isNeo ? AppTheme.bgCard : null,
+          borderRadius: isNeo ? BorderRadius.zero : BorderRadius.circular(20),
+          border: isNeo ? Border.all(color: AppTheme.accent, width: 2) : null,
+          boxShadow: isNeo
+              ? [
+                  BoxShadow(
+                    color: Colors.black,
+                    offset: Offset(4, 4),
+                    blurRadius: 0,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: AppTheme.accent.withAlpha(80),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ],
         ),
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.fingerprint_rounded,
-                  color: Colors.white70,
+                  color: isNeo ? AppTheme.accent : Colors.white70,
                   size: 18,
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: 6),
                 Text(
                   'Your FluxDrop Code',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall!.copyWith(color: Colors.white70),
+                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                    color: isNeo ? AppTheme.textMuted : Colors.white70,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: Text(
                     user.shortCode,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 36,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: isNeo ? AppTheme.accent : Colors.white,
                       letterSpacing: 8,
                     ),
                   ),
                 ),
-                GestureDetector(
-                  onTap: onCopy,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: copied
-                          ? AppTheme.success.withAlpha(60)
-                          : Colors.white.withAlpha(30),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                // Copy button — FluxButton in NeoPOP, animated tile in classic
+                if (isNeo)
+                  FluxButton(
+                    onPressed: onCopy,
+                    fullWidth: false,
+                    tone: copied
+                        ? FluxButtonTone.success
+                        : FluxButtonTone.primary,
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           copied ? Icons.check_rounded : Icons.copy_rounded,
-                          color: Colors.white,
                           size: 16,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          copied ? 'Copied!' : 'Copy',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        SizedBox(width: 4),
+                        Text(copied ? 'Copied!' : 'Copy'),
                       ],
                     ),
+                  )
+                else
+                  GestureDetector(
+                    onTap: onCopy,
+                    child: AnimatedContainer(
+                      duration: Duration(milliseconds: 200),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: copied
+                            ? AppTheme.success.withAlpha(60)
+                            : Colors.white.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            copied ? Icons.check_rounded : Icons.copy_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            copied ? 'Copied!' : 'Copy',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               'Share this code with anyone to receive files',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall!.copyWith(color: Colors.white60),
+              style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                color: isNeo ? AppTheme.textMuted : Colors.white60,
+              ),
             ),
           ],
         ),
@@ -720,13 +916,10 @@ class _IncomingReadyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.bgCard,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.warning.withAlpha(90)),
-      ),
-      padding: const EdgeInsets.all(16),
+    return FluxSurface(
+      color: AppTheme.bgCard,
+      borderColor: AppTheme.warning.withAlpha(90),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -739,9 +932,9 @@ class _IncomingReadyCard extends StatelessWidget {
                   color: AppTheme.warning.withAlpha(28),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.inbox_rounded, color: AppTheme.warning),
+                child: Icon(Icons.inbox_rounded, color: AppTheme.warning),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -750,7 +943,7 @@ class _IncomingReadyCard extends StatelessWidget {
                       'New transfer from ${transfer.senderCode}',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       '${transfer.files.length} file(s) • ${formatSize(transfer.totalBytes)}',
                       style: Theme.of(context).textTheme.bodySmall,
@@ -760,10 +953,10 @@ class _IncomingReadyCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: AppTheme.bgCardElevated,
               borderRadius: BorderRadius.circular(14),
@@ -778,12 +971,12 @@ class _IncomingReadyCard extends StatelessWidget {
                     context,
                   ).textTheme.bodyMedium!.copyWith(color: AppTheme.textPrimary),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   'Accept to download this transfer to your device, or decline to reject it.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Text(
                   _formatExpiry(transfer.expiresAt),
                   style: Theme.of(
@@ -793,43 +986,114 @@ class _IncomingReadyCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: FluxButton(
                   onPressed: onDecline,
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  label: const Text('Decline'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.error,
-                    side: const BorderSide(color: AppTheme.error),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  tone: FluxButtonTone.danger,
+                  outlined: true,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.close_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Decline'),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton.icon(
+                child: FluxButton(
                   onPressed: onAccept,
-                  icon: const Icon(Icons.check_circle_rounded, size: 18),
-                  label: const Text('Accept'),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: AppTheme.success,
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: AppTheme.success),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  tone: FluxButtonTone.success,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Accept'),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          TextButton(
+          SizedBox(height: 10),
+          FluxButton(
             onPressed: onOpenTransfers,
-            child: const Text('Open Transfers for details'),
+            fullWidth: false,
+            outlined: true,
+            tone: FluxButtonTone.neutral,
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Text('Open Transfers for details'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThemeOptionCard extends StatelessWidget {
+  final FluxThemeMode mode;
+  final FluxThemeMode currentMode;
+  final String title;
+  final String subtitle;
+  final LinearGradient previewGradient;
+  final VoidCallback onTap;
+
+  const _ThemeOptionCard({
+    required this.mode,
+    required this.currentMode,
+    required this.title,
+    required this.subtitle,
+    required this.previewGradient,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = mode == currentMode;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppTheme.cardBorderRadius,
+      child: FluxSurface(
+        color: AppTheme.bgCardElevated,
+        borderColor: isSelected ? AppTheme.accent : AppTheme.border,
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                gradient: previewGradient,
+                borderRadius: BorderRadius.circular(AppTheme.inputRadius),
+                border: Border.all(
+                  color: AppTheme.isNeoPop ? Colors.black : Colors.transparent,
+                ),
+              ),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  SizedBox(height: 4),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            SizedBox(width: 12),
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isSelected ? AppTheme.accent : AppTheme.textMuted,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -854,13 +1118,8 @@ class _ActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppTheme.bgCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.border),
-        ),
+      child: FluxSurface(
+        padding: EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -869,13 +1128,13 @@ class _ActionCard extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 gradient: gradient,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppTheme.inputRadius),
               ),
               child: Icon(icon, color: Colors.white, size: 22),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(label, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
@@ -897,13 +1156,8 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
+    return FluxSurface(
+      padding: EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -912,17 +1166,17 @@ class _InfoCard extends StatelessWidget {
             height: 36,
             decoration: BoxDecoration(
               color: AppTheme.accentGlow,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.inputRadius),
             ),
             child: Icon(icon, color: AppTheme.accent, size: 20),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(body, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
@@ -950,6 +1204,70 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isNeo = AppTheme.isNeoPop;
+    final iconColor = selected ? Colors.black : AppTheme.textPrimary;
+    final labelColor = selected ? Colors.black : AppTheme.textMuted;
+
+    if (isNeo) {
+      return Expanded(
+        child: SizedBox(
+          height: 70,
+          child: NeoPopButton(
+            color: selected ? AppTheme.accent : AppTheme.bgCard,
+            buttonPosition: Position.center,
+            parentColor: AppTheme.bg,
+            grandparentColor: AppTheme.bg,
+            border: Border.all(
+              color: selected ? AppTheme.accent : AppTheme.border,
+              width: 1.2,
+            ),
+            onTapUp: onTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, color: iconColor, size: 21),
+                      SizedBox(height: 3),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: labelColor,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (showBadge)
+                    Positioned(
+                      top: 2,
+                      right: 16,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: AppTheme.success,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.black, width: 1),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -958,11 +1276,11 @@ class _NavItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              duration: Duration(milliseconds: 180),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: selected ? AppTheme.accentGlow : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppTheme.inputRadius),
               ),
               child: Stack(
                 clipBehavior: Clip.none,
@@ -979,7 +1297,7 @@ class _NavItem extends StatelessWidget {
                       child: Container(
                         width: 8,
                         height: 8,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppTheme.accent,
                           shape: BoxShape.circle,
                         ),
@@ -988,7 +1306,7 @@ class _NavItem extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 2),
+            SizedBox(height: 2),
             Text(
               label,
               style: TextStyle(

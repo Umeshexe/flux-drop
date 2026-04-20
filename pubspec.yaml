@@ -49,6 +49,7 @@ dependencies:
   shared_preferences: ^2.5.5
   share_plus: ^10.1.2
   connectivity_plus: ^7.0.0
+  neopop: ^1.0.2
   rxdart: ^0.28.0
   google_fonts: ^8.0.2
   package_info_plus: ^8.0.0

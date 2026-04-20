@@ -235,17 +235,27 @@ class TransferService {
 
         _activeUploadTask = uploadTask;
 
-        uploadTask.snapshotEvents.listen((snapshot) {
-          final fileBytesUploaded = snapshot.bytesTransferred;
-          final total = bytesUploadedSoFar + fileBytesUploaded;
-          onProgress(i + 1, files.length, total, totalBytes);
+        final uploadProgressSub = uploadTask.snapshotEvents.listen(
+          (snapshot) {
+            final fileBytesUploaded = snapshot.bytesTransferred;
+            final total = bytesUploadedSoFar + fileBytesUploaded;
+            onProgress(i + 1, files.length, total, totalBytes);
 
-          final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-          transferRef.update({
-            'uploadProgress': progress,
-            'transferredBytes': total,
-          });
-        });
+            final progress = totalBytes > 0 ? total / totalBytes : 0.0;
+            unawaited(
+              transferRef.update({
+                'uploadProgress': progress,
+                'transferredBytes': total,
+              }),
+            );
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!_isUploadCancelled(transferId, error)) {
+              debugPrint('❌ [Transfer] Upload progress listener error: $error');
+            }
+          },
+          cancelOnError: false,
+        );
 
         late final TaskSnapshot snapshot;
         try {
@@ -256,6 +266,7 @@ class TransferService {
           }
           rethrow;
         } finally {
+          await uploadProgressSub.cancel();
           if (_activeUploadTransferId == transferId) {
             _activeUploadTask = null;
           }
@@ -341,6 +352,13 @@ class TransferService {
     final transferRef = _db
         .collection(AppConstants.transfersCollection)
         .doc(transfer.transferId);
+    final previousStatus = transfer.status;
+    final revertStatus = previousStatus == TransferStatus.completed
+        ? AppConstants.statusCompleted
+        : AppConstants.statusUploaded;
+    final revertProgress = previousStatus == TransferStatus.completed
+        ? 1.0
+        : 0.0;
 
     await transferRef.update({'status': AppConstants.statusDownloading});
 
@@ -353,8 +371,8 @@ class TransferService {
     } catch (e) {
       // If we can't create the directory, we fail early
       await transferRef.update({
-        'status': AppConstants.statusUploaded,
-        'downloadProgress': 0.0,
+        'status': revertStatus,
+        'downloadProgress': revertProgress,
       });
       throw Exception(
         'Could not create download directory. Please try a different location.',
@@ -369,8 +387,8 @@ class TransferService {
 
     if (!await _hasEnoughStorage(totalBytes)) {
       await transferRef.update({
-        'status': AppConstants.statusUploaded,
-        'downloadProgress': 0.0,
+        'status': revertStatus,
+        'downloadProgress': revertProgress,
       });
       throw Exception('Insufficient storage space to download these files.');
     }
@@ -392,14 +410,24 @@ class TransferService {
           final downloadTask = ref.writeToFile(saveFile);
           _activeDownloadTasks[transfer.transferId] = downloadTask;
 
-          downloadTask.snapshotEvents.listen((snapshot) {
-            final fileBytesDownloaded = snapshot.bytesTransferred;
-            final total = bytesDownloadedSoFar + fileBytesDownloaded;
-            onProgress(i + 1, transfer.files.length, total, totalBytes);
+          final downloadProgressSub = downloadTask.snapshotEvents.listen(
+            (snapshot) {
+              final fileBytesDownloaded = snapshot.bytesTransferred;
+              final total = bytesDownloadedSoFar + fileBytesDownloaded;
+              onProgress(i + 1, transfer.files.length, total, totalBytes);
 
-            final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-            transferRef.update({'downloadProgress': progress});
-          });
+              final progress = totalBytes > 0 ? total / totalBytes : 0.0;
+              unawaited(transferRef.update({'downloadProgress': progress}));
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              if (!_isDownloadCancelled(transfer.transferId, error)) {
+                debugPrint(
+                  '❌ [Transfer] Download progress listener error: $error',
+                );
+              }
+            },
+            cancelOnError: false,
+          );
 
           try {
             await downloadTask;
@@ -409,6 +437,7 @@ class TransferService {
             }
             rethrow;
           } finally {
+            await downloadProgressSub.cancel();
             _activeDownloadTasks.remove(transfer.transferId);
           }
 
@@ -470,8 +499,8 @@ class TransferService {
 
       // Revert status on failure
       await transferRef.update({
-        'status': AppConstants.statusUploaded,
-        'downloadProgress': 0.0,
+        'status': revertStatus,
+        'downloadProgress': revertProgress,
         'errorMessage': cancelled
             ? 'Download cancelled by user.'
             : e.toString(),

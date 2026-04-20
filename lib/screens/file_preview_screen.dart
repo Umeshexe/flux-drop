@@ -6,7 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/theme.dart';
 
-const Set<String> previewableImageExtensions = {
+Set<String> previewableImageExtensions = {
   'jpg',
   'jpeg',
   'png',
@@ -16,7 +16,7 @@ const Set<String> previewableImageExtensions = {
   'heif',
 };
 
-const Set<String> previewableTextExtensions = {
+Set<String> previewableTextExtensions = {
   'txt',
   'md',
   'json',
@@ -75,12 +75,12 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
         actions: [
           IconButton(
             onPressed: _shareFile,
-            icon: const Icon(Icons.ios_share_rounded),
+            icon: Icon(Icons.ios_share_rounded),
           ),
         ],
       ),
       body: SafeArea(
-        child: Padding(padding: const EdgeInsets.all(20), child: _buildBody()),
+        child: Padding(padding: EdgeInsets.all(20), child: _buildBody()),
       ),
     );
   }
@@ -113,7 +113,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
         future: File(widget.path).readAsString(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return Center(
               child: CircularProgressIndicator(color: AppTheme.accent),
             );
           }
@@ -123,7 +123,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
 
           return Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: AppTheme.bgCard,
               borderRadius: BorderRadius.circular(24),
@@ -151,7 +151,7 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
   Widget _buildUnsupported(String message) {
     return Center(
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: AppTheme.bgCard,
           borderRadius: BorderRadius.circular(24),
@@ -160,12 +160,12 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.insert_drive_file_rounded,
               size: 44,
               color: AppTheme.textMuted,
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
               message,
               textAlign: TextAlign.center,

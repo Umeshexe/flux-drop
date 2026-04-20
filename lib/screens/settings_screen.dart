@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme.dart';
+import '../widgets/flux_ui.dart';
 
 class SettingsPanel extends StatefulWidget {
   const SettingsPanel({super.key});
@@ -31,7 +32,7 @@ class _SettingsPanelState extends State<SettingsPanel>
     super.initState();
     _fadeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: Duration(milliseconds: 500),
     )..forward();
     _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _loadAll();
@@ -127,11 +128,11 @@ class _SettingsPanelState extends State<SettingsPanel>
   void _toast(String msg, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
+        content: Text(msg, style: TextStyle(color: Colors.white)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -159,7 +160,7 @@ class _SettingsPanelState extends State<SettingsPanel>
             // ─── Gradient header ──────────────────────────────────────────
             SliverToBoxAdapter(
               child: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Color(0xFF1A1A2E), Color(0xFF0A0A0F)],
                     begin: Alignment.topCenter,
@@ -169,23 +170,23 @@ class _SettingsPanelState extends State<SettingsPanel>
                 child: SafeArea(
                   bottom: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 16, 28),
+                    padding: EdgeInsets.fromLTRB(20, 12, 16, 28),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             IconButton(
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.arrow_back_ios_new_rounded,
                                 color: AppTheme.textMuted,
                                 size: 18,
                               ),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            const Spacer(),
+                            Spacer(),
                             Container(
-                              padding: const EdgeInsets.symmetric(
+                              padding: EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 4,
                               ),
@@ -195,7 +196,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                               ),
                               child: Text(
                                 'v$_version',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppTheme.accent,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -204,7 +205,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
                         Row(
                           children: [
                             Container(
@@ -212,26 +213,26 @@ class _SettingsPanelState extends State<SettingsPanel>
                               height: 52,
                               decoration: BoxDecoration(
                                 gradient: AppTheme.accentGradient,
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: AppTheme.cardBorderRadius,
                                 boxShadow: [
                                   BoxShadow(
                                     color: AppTheme.accent.withAlpha(80),
                                     blurRadius: 16,
-                                    offset: const Offset(0, 4),
+                                    offset: Offset(0, 4),
                                   ),
                                 ],
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.settings_rounded,
                                 color: Colors.white,
                                 size: 26,
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            SizedBox(width: 16),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Settings',
                                   style: TextStyle(
                                     fontSize: 26,
@@ -243,7 +244,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                                   Platform.isIOS
                                       ? 'iOS • FluxDrop ${"v$_version"}'
                                       : 'Android • FluxDrop ${"v$_version"}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
                                     color: AppTheme.textMuted,
                                   ),
@@ -261,7 +262,7 @@ class _SettingsPanelState extends State<SettingsPanel>
 
             // ─── Body sections ────────────────────────────────────────────
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 40),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   // ── Download Location ──────────────────────────────────
@@ -281,7 +282,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                             children: [
                               if (_defaultSavePath != null)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
+                                  padding: EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 3,
                                   ),
@@ -289,7 +290,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                                     color: AppTheme.successGlow,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'Set',
                                     style: TextStyle(
                                       color: AppTheme.success,
@@ -300,7 +301,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                                 )
                               else
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
+                                  padding: EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 3,
                                   ),
@@ -308,7 +309,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                                     color: AppTheme.bgCardElevated,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'None',
                                     style: TextStyle(
                                       color: AppTheme.textMuted,
@@ -317,8 +318,8 @@ class _SettingsPanelState extends State<SettingsPanel>
                                     ),
                                   ),
                                 ),
-                              const SizedBox(width: 8),
-                              const Icon(
+                              SizedBox(width: 8),
+                              Icon(
                                 Icons.chevron_right_rounded,
                                 color: AppTheme.textMuted,
                                 size: 20,
@@ -334,7 +335,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                             iconColor: AppTheme.error,
                             title: 'Reset Folder',
                             subtitle: 'Go back to Share Sheet each time',
-                            trailing: const Icon(
+                            trailing: Icon(
                               Icons.chevron_right_rounded,
                               color: AppTheme.textMuted,
                               size: 20,
@@ -350,7 +351,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                           title: 'Default Save Folder',
                           subtitle: 'Files App via Share Sheet',
                           trailing: Container(
-                            padding: const EdgeInsets.symmetric(
+                            padding: EdgeInsets.symmetric(
                               horizontal: 8,
                               vertical: 3,
                             ),
@@ -358,7 +359,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                               color: AppTheme.accentGlow,
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Auto',
                               style: TextStyle(
                                 color: AppTheme.accent,
@@ -390,7 +391,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                         title: 'Temp Cache',
                         subtitle: 'Files awaiting the Share Sheet',
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 3,
                           ),
@@ -400,7 +401,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                           ),
                           child: Text(
                             _cacheSize,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -415,7 +416,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                         title: 'Clear Cache',
                         subtitle: 'Delete all temporary download files',
                         trailing: _isClearing
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
@@ -423,7 +424,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                                   color: AppTheme.warning,
                                 ),
                               )
-                            : const Icon(
+                            : Icon(
                                 Icons.chevron_right_rounded,
                                 color: AppTheme.textMuted,
                                 size: 20,
@@ -518,16 +519,13 @@ class _SettingsPanelState extends State<SettingsPanel>
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
 
                   // Footer
                   Center(
                     child: Text(
                       'FluxDrop v$_version · Made with ♥',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                     ),
                   ),
                 ]),
@@ -548,10 +546,10 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
+    padding: EdgeInsets.fromLTRB(4, 24, 0, 8),
     child: Text(
       text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11,
         fontWeight: FontWeight.w700,
         color: AppTheme.textMuted,
@@ -566,20 +564,14 @@ class _Card extends StatelessWidget {
   const _Card({required this.children});
 
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: AppTheme.bgCard,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppTheme.border),
-    ),
-    child: Column(children: children),
-  );
+  Widget build(BuildContext context) =>
+      FluxSurface(child: Column(children: children));
 }
 
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
-      const Divider(color: AppTheme.border, height: 1, indent: 56);
+      Divider(color: AppTheme.border, height: 1, indent: 56);
 }
 
 class _Tile extends StatelessWidget {
@@ -602,9 +594,9 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: onTap,
-    borderRadius: BorderRadius.circular(18),
+    borderRadius: AppTheme.cardBorderRadiusLarge,
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       child: Row(
         children: [
           Container(
@@ -612,27 +604,27 @@ class _Tile extends StatelessWidget {
             height: 36,
             decoration: BoxDecoration(
               color: iconColor.withAlpha(25),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.inputRadius),
             ),
             child: Icon(icon, color: iconColor, size: 18),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.textMuted,
                     height: 1.4,
@@ -641,7 +633,7 @@ class _Tile extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+          if (trailing != null) ...[SizedBox(width: 10), trailing!],
         ],
       ),
     ),
@@ -667,7 +659,7 @@ class _ToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     child: Row(
       children: [
         Container(
@@ -675,27 +667,27 @@ class _ToggleTile extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             color: iconColor.withAlpha(25),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppTheme.inputRadius),
           ),
           child: Icon(icon, color: iconColor, size: 18),
         ),
-        const SizedBox(width: 14),
+        SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textPrimary,
                 ),
               ),
-              const SizedBox(height: 2),
+              SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
             ],
           ),
@@ -719,10 +711,10 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    padding: EdgeInsets.symmetric(horizontal: 9, vertical: 4),
     decoration: BoxDecoration(
       color: bg,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(AppTheme.inputRadius),
     ),
     child: Text(
       label,

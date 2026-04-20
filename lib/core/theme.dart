@@ -1,8 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum FluxThemeMode { classic, neoPop }
+
+extension FluxThemeModeX on FluxThemeMode {
+  String get storageValue =>
+      this == FluxThemeMode.neoPop ? 'neopop' : 'classic';
+
+  String get label => this == FluxThemeMode.neoPop ? 'NeoPOP' : 'Current';
+
+  static FluxThemeMode fromStorageValue(String? value) {
+    return value == 'neopop' ? FluxThemeMode.neoPop : FluxThemeMode.classic;
+  }
+}
 
 class AppTheme {
-  // ─── Color Palette ─────────────────────────────────────────────────────────
+  static const _prefsKey = 'appThemeMode';
+
+  static final ValueNotifier<FluxThemeMode> modeNotifier =
+      ValueNotifier<FluxThemeMode>(FluxThemeMode.classic);
+
   static const Color bg = Color(0xFF0A0A0F);
   static const Color bgCard = Color(0xFF13131A);
   static const Color bgCardElevated = Color(0xFF1C1C28);
@@ -19,7 +38,6 @@ class AppTheme {
   static const Color textMuted = Color(0xFF6B6B7B);
   static const Color border = Color(0xFF2A2A38);
 
-  // ─── Gradients ─────────────────────────────────────────────────────────────
   static const LinearGradient accentGradient = LinearGradient(
     colors: [Color(0xFF6C63FF), Color(0xFF9D55FF)],
     begin: Alignment.centerLeft,
@@ -38,8 +56,38 @@ class AppTheme {
     end: Alignment.bottomCenter,
   );
 
-  // ─── Theme ─────────────────────────────────────────────────────────────────
-  static ThemeData get dark {
+  static Future<void> initialize() async {
+    final prefs = await SharedPreferences.getInstance();
+    modeNotifier.value = FluxThemeModeX.fromStorageValue(
+      prefs.getString(_prefsKey),
+    );
+  }
+
+  static Future<void> setThemeMode(FluxThemeMode mode) async {
+    if (modeNotifier.value == mode) return;
+    modeNotifier.value = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, mode.storageValue);
+    applySystemUi();
+  }
+
+  static FluxThemeMode get currentMode => modeNotifier.value;
+  static bool get isNeoPop => currentMode == FluxThemeMode.neoPop;
+
+  static double get cardRadius => 16;
+  static double get cardRadiusLarge => 20;
+  static double get inputRadius => 12;
+  static double get buttonRadius => 12;
+
+  static BorderRadius get cardBorderRadius => BorderRadius.circular(cardRadius);
+  static BorderRadius get cardBorderRadiusLarge =>
+      BorderRadius.circular(cardRadiusLarge);
+  static BorderRadius get buttonBorderRadius =>
+      BorderRadius.circular(buttonRadius);
+
+  static List<BoxShadow> get cardShadow => const [];
+
+  static ThemeData get materialTheme {
     final base = ThemeData.dark();
     return base.copyWith(
       scaffoldBackgroundColor: bg,
@@ -58,18 +106,18 @@ class AppTheme {
         ),
         displayMedium: GoogleFonts.inter(
           fontSize: 24,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: textPrimary,
           letterSpacing: -0.3,
         ),
         headlineLarge: GoogleFonts.inter(
           fontSize: 20,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: textPrimary,
         ),
         titleLarge: GoogleFonts.inter(
           fontSize: 16,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: textPrimary,
         ),
         bodyLarge: GoogleFonts.inter(
@@ -80,7 +128,7 @@ class AppTheme {
         bodyMedium: GoogleFonts.inter(
           fontSize: 14,
           color: textSecondary,
-          height: 1.5,
+          height: 1.45,
         ),
         bodySmall: GoogleFonts.inter(
           fontSize: 12,
@@ -88,7 +136,7 @@ class AppTheme {
         ),
         labelLarge: GoogleFonts.inter(
           fontSize: 14,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: textPrimary,
           letterSpacing: 0.5,
         ),
@@ -108,7 +156,7 @@ class AppTheme {
         color: bgCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: cardBorderRadius,
           side: const BorderSide(color: border, width: 1),
         ),
       ),
@@ -116,19 +164,19 @@ class AppTheme {
         filled: true,
         fillColor: bgCardElevated,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(inputRadius),
           borderSide: const BorderSide(color: border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(inputRadius),
           borderSide: const BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(inputRadius),
           borderSide: const BorderSide(color: accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(inputRadius),
           borderSide: const BorderSide(color: error),
         ),
         hintStyle: GoogleFonts.inter(color: textMuted, fontSize: 14),
@@ -140,16 +188,47 @@ class AppTheme {
           backgroundColor: accent,
           foregroundColor: textPrimary,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: buttonBorderRadius),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           textStyle: GoogleFonts.inter(
             fontSize: 15,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textPrimary,
+          shape: RoundedRectangleBorder(borderRadius: buttonBorderRadius),
+          side: const BorderSide(color: border, width: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          textStyle: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: bgCardElevated,
+        contentTextStyle: const TextStyle(color: textPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: border),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
+  }
+
+  static SystemUiOverlayStyle get systemUiOverlayStyle =>
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: bg,
+        systemNavigationBarIconBrightness: Brightness.light,
+      );
+
+  static void applySystemUi() {
+    SystemChrome.setSystemUIOverlayStyle(systemUiOverlayStyle);
   }
 }

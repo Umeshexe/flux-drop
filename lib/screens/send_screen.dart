@@ -12,6 +12,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/network_service.dart';
 import '../services/transfer_service.dart';
+import '../widgets/flux_ui.dart';
 
 class SendScreen extends StatefulWidget {
   final UserModel user;
@@ -154,21 +155,25 @@ class _SendScreenState extends State<SendScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
-        title: const Text('Storage Permission Needed'),
-        content: const Text(
+        title: Text('Storage Permission Needed'),
+        content: Text(
           'FluxDrop needs storage access to pick files. Please enable it in Settings.',
         ),
         actions: [
-          TextButton(
+          FluxButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            fullWidth: false,
+            outlined: true,
+            tone: FluxButtonTone.neutral,
+            child: Text('Cancel'),
           ),
-          ElevatedButton(
+          FluxButton(
             onPressed: () {
               Navigator.pop(context);
               openAppSettings();
             },
-            child: const Text('Open Settings'),
+            fullWidth: false,
+            child: Text('Open Settings'),
           ),
         ],
       ),
@@ -257,13 +262,13 @@ class _SendScreenState extends State<SendScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.signal_cellular_alt_rounded,
               color: AppTheme.warning,
               size: 22,
             ),
-            const SizedBox(width: 10),
-            const Text('Large Upload'),
+            SizedBox(width: 10),
+            Text('Large Upload'),
           ],
         ),
         content: Text(
@@ -271,17 +276,17 @@ class _SendScreenState extends State<SendScreen> {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         actions: [
-          TextButton(
+          FluxButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: AppTheme.textMuted),
-            ),
+            fullWidth: false,
+            outlined: true,
+            tone: FluxButtonTone.neutral,
+            child: Text('Cancel'),
           ),
-          ElevatedButton(
+          FluxButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
-            child: const Text('Upload Anyway'),
+            fullWidth: false,
+            child: Text('Upload Anyway'),
           ),
         ],
       ),
@@ -295,7 +300,7 @@ class _SendScreenState extends State<SendScreen> {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: AppTheme.bgCard,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => SafeArea(
@@ -310,47 +315,41 @@ class _SendScreenState extends State<SendScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: AppTheme.successGradient,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.success.withAlpha(80),
-                    blurRadius: 20,
-                  ),
-                ],
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: AppTheme.successGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.success.withAlpha(80),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.check_rounded, color: Colors.white, size: 30),
               ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Colors.white,
-                size: 30,
+              SizedBox(height: 16),
+              Text(
+                'Transfer Complete!',
+                style: Theme.of(context).textTheme.headlineLarge,
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Transfer Complete!',
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${transfer.files.length} file(s) sent to ${transfer.receiverCode}',
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${TransferService.formatBytesStatic(transfer.totalBytes)} transferred',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall!.copyWith(color: AppTheme.success),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
+              SizedBox(height: 8),
+              Text(
+                '${transfer.files.length} file(s) sent to ${transfer.receiverCode}',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                '${TransferService.formatBytesStatic(transfer.totalBytes)} transferred',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall!.copyWith(color: AppTheme.success),
+              ),
+              SizedBox(height: 24),
+              FluxButton(
                 onPressed: () {
                   Navigator.pop(context);
                   setState(() {
@@ -359,9 +358,8 @@ class _SendScreenState extends State<SendScreen> {
                     _codeController.clear();
                   });
                 },
-                child: const Text('Send More Files'),
+                child: Text('Send More Files'),
               ),
-            ),
             ],
           ),
         ),
@@ -391,87 +389,114 @@ class _SendScreenState extends State<SendScreen> {
       behavior: HitTestBehavior.opaque,
       child: SingleChildScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               'Send Files',
               style: Theme.of(context).textTheme.displayMedium,
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Text(
               'Enter the recipient\'s code and select files',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 32),
+            SizedBox(height: 32),
 
             // ─── Recipient code input ─────────────────────────────────────────
             Text(
               'Recipient Code',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _codeController,
-                      textCapitalization: TextCapitalization.characters,
-                      maxLength: AppConstants.shortCodeLength,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 4,
-                        color: AppTheme.textPrimary,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'A4X9K2',
-                        counterText: '',
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
+                    child: Builder(builder: (ctx) {
+                      final isNeo = AppTheme.isNeoPop;
+                      final field = TextField(
+                        controller: _codeController,
+                        textCapitalization: TextCapitalization.characters,
+                        maxLength: AppConstants.shortCodeLength,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 4,
+                          color: isNeo ? AppTheme.accent : AppTheme.textPrimary,
                         ),
-                        prefixIcon: const Icon(
-                          Icons.tag_rounded,
-                          color: AppTheme.textMuted,
+                        decoration: InputDecoration(
+                          hintText: 'A4X9K2',
+                          counterText: '',
+                          enabledBorder: isNeo
+                              ? OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: AppTheme.accent, width: 2),
+                                )
+                              : null,
+                          focusedBorder: isNeo
+                              ? OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: AppTheme.accent, width: 2.5),
+                                )
+                              : null,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.tag_rounded,
+                            color: isNeo ? AppTheme.accent : AppTheme.textMuted,
+                          ),
+                          filled: isNeo,
+                          fillColor: isNeo ? Colors.black : null,
                         ),
-                      ),
-                      onChanged: (_) {
-                        if (_recipientError != null) {
-                          setState(() {
-                            _recipientError = null;
-                            _recipient = null;
-                          });
-                        }
-                      },
-                      onSubmitted: (_) => _lookupRecipient(),
-                    ),
+                        onChanged: (_) {
+                          if (_recipientError != null) {
+                            setState(() {
+                              _recipientError = null;
+                              _recipient = null;
+                            });
+                          }
+                        },
+                        onSubmitted: (_) => _lookupRecipient(),
+                      );
+                      if (!isNeo) return field;
+                      return Container(
+                        decoration: BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black,
+                              offset: Offset(3, 3),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                        child: field,
+                      );
+                    }),
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
+                  SizedBox(width: 12),
+                  FluxButton(
                     onPressed: _lookingUp ? null : _lookupRecipient,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      backgroundColor: AppTheme.accentLight,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                    fullWidth: false,
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                     child: _lookingUp
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppTheme.isNeoPop
+                                  ? Colors.black
+                                  : Colors.white,
                             ),
                           )
-                        : const Text('Find', style: TextStyle(fontSize: 16)),
+                        : Text('Find', style: TextStyle(fontSize: 16)),
                   ),
                 ],
               ),
@@ -479,18 +504,18 @@ class _SendScreenState extends State<SendScreen> {
 
             if (_recipientError != null)
               Padding(
-                padding: const EdgeInsets.only(top: 8, left: 4),
+                padding: EdgeInsets.only(top: 8, left: 4),
                 child: Text(
                   _recipientError!,
-                  style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                  style: TextStyle(color: AppTheme.error, fontSize: 13),
                 ),
               ),
 
             // Recipient found indicator
             if (_recipient != null) ...[
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: AppTheme.successGlow,
                   borderRadius: BorderRadius.circular(12),
@@ -498,12 +523,12 @@ class _SendScreenState extends State<SendScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.check_circle_rounded,
                       color: AppTheme.success,
                       size: 20,
                     ),
-                    const SizedBox(width: 10),
+                    SizedBox(width: 10),
                     Text(
                       'Recipient found: ${_recipient!.shortCode}',
                       style: Theme.of(
@@ -515,25 +540,17 @@ class _SendScreenState extends State<SendScreen> {
               ),
             ],
 
-            const SizedBox(height: 28),
+            SizedBox(height: 28),
 
             // ─── File picker ──────────────────────────────────────────────────
             Text('Select Files', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             if (_selectedFiles.isEmpty)
               GestureDetector(
                 onTap: _pickFiles,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bgCardElevated,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppTheme.border,
-                      style: BorderStyle.solid,
-                    ),
-                  ),
+                child: FluxSurface(
+                  color: AppTheme.bgCardElevated,
+                  padding: EdgeInsets.symmetric(vertical: 32, horizontal: 20),
                   child: Column(
                     children: [
                       Container(
@@ -543,21 +560,22 @@ class _SendScreenState extends State<SendScreen> {
                           color: AppTheme.accentGlow,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.add_rounded,
                           color: AppTheme.accent,
                           size: 30,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: 12),
                       Text(
                         'Tap to select files',
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4),
                       Text(
                         'Images, videos, documents, any format • Max 500 MB',
                         style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
@@ -571,15 +589,25 @@ class _SendScreenState extends State<SendScreen> {
                   onRemove: () => setState(() => _selectedFiles.remove(f)),
                 ),
               ),
-              const SizedBox(height: 10),
-              TextButton.icon(
+              SizedBox(height: 10),
+              FluxButton(
                 onPressed: _pickFiles,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add More Files'),
+                fullWidth: false,
+                outlined: true,
+                tone: FluxButtonTone.neutral,
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text('Add More Files'),
+                  ],
+                ),
               ),
             ],
 
-            const SizedBox(height: 32),
+            SizedBox(height: 32),
 
             // ─── Progress bar (shown during send) ─────────────────────────────
             if (_sending) ...[
@@ -591,43 +619,35 @@ class _SendScreenState extends State<SendScreen> {
                 cancelling: _cancelling,
                 onCancel: _cancelUpload,
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
             ],
 
             // ─── Send button ──────────────────────────────────────────────────
             if (!_sending)
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed:
-                      (_recipient != null &&
-                          _selectedFiles.isNotEmpty &&
-                          !_sending)
-                      ? _send
-                      : null,
-                  icon: const Icon(Icons.upload_rounded),
-                  label: Text(
-                    _selectedFiles.isEmpty
-                        ? 'Select files to send'
-                        : _recipient == null
-                        ? 'Find a recipient first'
-                        : 'Send ${_selectedFiles.length} file(s)',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        (_recipient != null && _selectedFiles.isNotEmpty)
-                        ? AppTheme.accent
-                        : AppTheme.bgCardElevated,
-                    foregroundColor:
-                        (_recipient != null && _selectedFiles.isNotEmpty)
-                        ? Colors.white
-                        : AppTheme.textMuted,
-                  ),
+              FluxButton(
+                onPressed:
+                    (_recipient != null &&
+                        _selectedFiles.isNotEmpty &&
+                        !_sending)
+                    ? _send
+                    : null,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.upload_rounded),
+                    SizedBox(width: 8),
+                    Text(
+                      _selectedFiles.isEmpty
+                          ? 'Select files to send'
+                          : _recipient == null
+                          ? 'Find a recipient first'
+                          : 'Send ${_selectedFiles.length} file(s)',
+                    ),
+                  ],
                 ),
               ),
 
-            const SizedBox(height: 32),
+            SizedBox(height: 32),
           ],
         ),
       ),
@@ -648,8 +668,8 @@ class _FileChip extends StatelessWidget {
     final isOversized = file.size > AppConstants.maxFileSizeBytes;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: isOversized ? AppTheme.errorGlow : AppTheme.bgCardElevated,
         borderRadius: BorderRadius.circular(12),
@@ -664,7 +684,7 @@ class _FileChip extends StatelessWidget {
             color: isOversized ? AppTheme.error : AppTheme.accent,
             size: 22,
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,7 +706,7 @@ class _FileChip extends StatelessWidget {
           ),
           IconButton(
             onPressed: onRemove,
-            icon: const Icon(Icons.close_rounded, size: 18),
+            icon: Icon(Icons.close_rounded, size: 18),
             color: AppTheme.textMuted,
           ),
         ],
@@ -745,7 +765,7 @@ class _ProgressSection extends StatelessWidget {
     final percent = (progress * 100).toStringAsFixed(1);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppTheme.bgCard,
         borderRadius: BorderRadius.circular(16),
@@ -756,7 +776,7 @@ class _ProgressSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              const SizedBox(
+              SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
@@ -764,14 +784,14 @@ class _ProgressSection extends StatelessWidget {
                   color: AppTheme.accent,
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Text(
                 cancelling
                     ? 'Cancelling upload...'
                     : 'Uploading file $currentFile of $totalFiles',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
-              const Spacer(),
+              Spacer(),
               Text(
                 '$percent%',
                 style: Theme.of(
@@ -780,7 +800,7 @@ class _ProgressSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           // Aggregate progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -791,7 +811,7 @@ class _ProgressSection extends StatelessWidget {
               minHeight: 8,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -805,21 +825,23 @@ class _ProgressSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: cancelling ? null : onCancel,
-              icon: Icon(
-                cancelling ? Icons.hourglass_top_rounded : Icons.close_rounded,
-                size: 18,
-              ),
-              label: Text(cancelling ? 'Cancelling...' : 'Cancel Transfer'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.error,
-                side: const BorderSide(color: AppTheme.error),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
+          SizedBox(height: 16),
+          FluxButton(
+            onPressed: cancelling ? null : onCancel,
+            tone: FluxButtonTone.danger,
+            outlined: true,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  cancelling
+                      ? Icons.hourglass_top_rounded
+                      : Icons.close_rounded,
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Text(cancelling ? 'Cancelling...' : 'Cancel Transfer'),
+              ],
             ),
           ),
         ],

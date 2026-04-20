@@ -22,21 +22,15 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await AppTheme.initialize();
+
   // Lock to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // Edge-to-edge dark UI
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: AppTheme.bg,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
+  AppTheme.applySystemUi();
 
   // Initialize Firebase with generated config
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -44,7 +38,7 @@ void main() async {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
-  runApp(const FluxDropApp());
+  runApp(FluxDropApp());
 }
 
 class FluxDropApp extends StatelessWidget {
@@ -52,18 +46,24 @@ class FluxDropApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FluxDrop',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
-      builder: (context, child) {
-        return GestureDetector(
-          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-          behavior: HitTestBehavior.opaque,
-          child: child,
+    return ValueListenableBuilder<FluxThemeMode>(
+      valueListenable: AppTheme.modeNotifier,
+      builder: (context, mode, _) {
+        AppTheme.applySystemUi();
+        return MaterialApp(
+          title: 'FluxDrop',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.materialTheme,
+          builder: (context, child) {
+            return GestureDetector(
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              behavior: HitTestBehavior.opaque,
+              child: child,
+            );
+          },
+          home: SplashScreen(),
         );
       },
-      home: const SplashScreen(),
     );
   }
 }

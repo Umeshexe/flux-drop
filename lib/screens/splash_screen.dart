@@ -37,11 +37,11 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupAnimations() {
     _logoController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: Duration(milliseconds: 900),
     );
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
     _logoScale = Tween<double>(begin: 0.7, end: 1.0).animate(
@@ -86,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen>
       _initialTabIndex = openedFromNotification ? 2 : 0;
       debugPrint('🔔 [Splash] Notifications ready');
 
-      await Future.delayed(const Duration(milliseconds: 600));
+      await Future.delayed(Duration(milliseconds: 600));
       debugPrint('🚀 [Splash] Navigating to HomeScreen');
 
       if (mounted) {
@@ -97,7 +97,7 @@ class _SplashScreenState extends State<SplashScreen>
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) =>
                     FadeTransition(opacity: animation, child: child),
-            transitionDuration: const Duration(milliseconds: 400),
+            transitionDuration: Duration(milliseconds: 400),
           ),
         );
       }
@@ -163,7 +163,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.bolt_rounded,
                       color: Colors.white,
                       size: 48,
@@ -172,7 +172,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 32),
+            SizedBox(height: 32),
             // App name
             ShaderMask(
               shaderCallback: (bounds) =>
@@ -184,12 +184,12 @@ class _SplashScreenState extends State<SplashScreen>
                 ).textTheme.displayLarge!.copyWith(color: Colors.white),
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               'Real-time file sharing, anywhere',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 64),
+            SizedBox(height: 64),
             // Status
             if (!_hasError)
               Column(
@@ -202,7 +202,7 @@ class _SplashScreenState extends State<SplashScreen>
                       color: AppTheme.accent,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Text(
                     _statusText,
                     style: Theme.of(context).textTheme.bodySmall,
@@ -212,14 +212,10 @@ class _SplashScreenState extends State<SplashScreen>
             else
               Column(
                 children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: AppTheme.error,
-                    size: 32,
-                  ),
-                  const SizedBox(height: 12),
+                  Icon(Icons.error_outline, color: AppTheme.error, size: 32),
+                  SizedBox(height: 12),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    padding: EdgeInsets.symmetric(horizontal: 32),
                     child: Text(
                       _statusText,
                       style: Theme.of(
@@ -228,7 +224,7 @@ class _SplashScreenState extends State<SplashScreen>
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   TextButton(
                     onPressed: () {
                       setState(() {
@@ -237,7 +233,7 @@ class _SplashScreenState extends State<SplashScreen>
                       });
                       _initializeApp();
                     },
-                    child: const Text('Retry'),
+                    child: Text('Retry'),
                   ),
                 ],
               ),

@@ -14,6 +14,7 @@ import 'file_preview_screen.dart';
 import '../services/network_service.dart';
 import '../services/notification_service.dart';
 import '../services/transfer_service.dart';
+import '../widgets/flux_ui.dart';
 
 class TransfersScreen extends StatefulWidget {
   final UserModel user;
@@ -46,7 +47,7 @@ class _TransfersScreenState extends State<TransfersScreen>
   // Track transfers already fully downloaded — prevent duplicate saves
   final Set<String> _completedDownloads = {};
   String? _lastAutoStartedTransferId;
-  static const _storageChannel = MethodChannel('fluxdrop/storage');
+  static final _storageChannel = MethodChannel('fluxdrop/storage');
 
   @override
   void initState() {
@@ -216,16 +217,22 @@ class _TransfersScreenState extends State<TransfersScreen>
     }
 
     if (transfer.status != TransferStatus.uploaded) {
-      widget.onAutoStartConsumed?.call();
       _lastAutoStartedTransferId = targetId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onAutoStartConsumed?.call();
+        }
+      });
       return;
     }
 
     _lastAutoStartedTransferId = targetId;
-    widget.onAutoStartConsumed?.call();
     final transferToStart = transfer;
+    // Defer both the setState-triggering callback and the download start
+    // to the next frame so we never call setState() during a build phase.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        widget.onAutoStartConsumed?.call();
         _downloadTransfer(transferToStart);
       }
     });
@@ -244,13 +251,13 @@ class _TransfersScreenState extends State<TransfersScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.signal_cellular_alt_rounded,
               color: AppTheme.warning,
               size: 22,
             ),
-            const SizedBox(width: 10),
-            const Text('Large Download'),
+            SizedBox(width: 10),
+            Text('Large Download'),
           ],
         ),
         content: Text(
@@ -258,16 +265,16 @@ class _TransfersScreenState extends State<TransfersScreen>
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         actions: [
-          TextButton(
+          FluxButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: AppTheme.textMuted),
-            ),
+            fullWidth: false,
+            outlined: true,
+            tone: FluxButtonTone.neutral,
+            child: Text('Cancel'),
           ),
-          ElevatedButton(
+          FluxButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
+            fullWidth: false,
             child: Text(actionLabel),
           ),
         ],
@@ -290,7 +297,7 @@ class _TransfersScreenState extends State<TransfersScreen>
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: AppTheme.bgCard,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => Padding(
@@ -315,23 +322,23 @@ class _TransfersScreenState extends State<TransfersScreen>
                       gradient: AppTheme.successGradient,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.download_done_rounded,
                       color: Colors.white,
                       size: 22,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  SizedBox(width: 14),
                   Text(
                     'Files Saved',
                     style: Theme.of(context).textTheme.headlineLarge,
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(14),
+                padding: EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Platform.isIOS
                       ? Colors.white.withAlpha(10)
@@ -346,7 +353,7 @@ class _TransfersScreenState extends State<TransfersScreen>
                       _savedLocationTitle(customPath: customPath),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       _savedLocationSubtitle(customPath: customPath),
                       style: Theme.of(context).textTheme.bodySmall,
@@ -354,18 +361,18 @@ class _TransfersScreenState extends State<TransfersScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               ...paths.map(
                 (p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.check_rounded,
                         color: AppTheme.success,
                         size: 16,
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           p.split('/').last,
@@ -377,63 +384,62 @@ class _TransfersScreenState extends State<TransfersScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               if (paths.length == 1 && _canPreview(paths.first)) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _openPreview(paths.first);
-                    },
-                    icon: const Icon(Icons.visibility_rounded, size: 18),
-                    label: const Text('Open'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.success,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                FluxButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _openPreview(paths.first);
+                  },
+                  tone: FluxButtonTone.success,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.visibility_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Open'),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
               ],
               if (_hasMediaFiles(paths)) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _saveToGallery(paths),
-                    icon: const Icon(Icons.photo_library_rounded, size: 18),
-                    label: Text(
-                      Platform.isIOS ? 'Save to Photos' : 'Save to Gallery',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.accent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                FluxButton(
+                  onPressed: () => _saveToGallery(paths),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.photo_library_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text(Platform.isIOS ? 'Save to Photos' : 'Save to Gallery'),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
               ],
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _shareDownloadedFiles(paths),
-                  icon: const Icon(Icons.ios_share_rounded),
-                  label: Text(
-                    Platform.isIOS
-                        ? 'Save to Files / Share'
-                        : 'Save / Share Elsewhere',
-                  ),
+              FluxButton(
+                onPressed: () => _shareDownloadedFiles(paths),
+                outlined: true,
+                tone: FluxButtonTone.neutral,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.ios_share_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      Platform.isIOS
+                          ? 'Save to Files / Share'
+                          : 'Save / Share Elsewhere',
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done'),
-                ),
+              SizedBox(height: 10),
+              FluxButton(
+                onPressed: () => Navigator.pop(context),
+                outlined: true,
+                tone: FluxButtonTone.neutral,
+                child: Text('Done'),
               ),
             ],
           ),
@@ -474,7 +480,7 @@ class _TransfersScreenState extends State<TransfersScreen>
 
   /// Returns true if any of the saved paths are image or video files.
   bool _hasMediaFiles(List<String> paths) {
-    const mediaExts = {
+    final mediaExts = {
       'jpg',
       'jpeg',
       'png',
@@ -579,7 +585,7 @@ class _TransfersScreenState extends State<TransfersScreen>
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -587,38 +593,49 @@ class _TransfersScreenState extends State<TransfersScreen>
                 'Transfers',
                 style: Theme.of(context).textTheme.displayMedium,
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4),
               Text(
                 'Incoming and outgoing file transfers',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               // Tab bar
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.bgCardElevated,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    gradient: AppTheme.accentGradient,
-                    borderRadius: BorderRadius.circular(10),
+              Builder(builder: (context) {
+                final isNeo = AppTheme.isNeoPop;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isNeo ? Colors.black : AppTheme.bgCardElevated,
+                    borderRadius: isNeo ? BorderRadius.zero : BorderRadius.circular(12),
+                    border: isNeo ? Border.all(color: AppTheme.accent, width: 1.5) : null,
                   ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: AppTheme.textMuted,
-                  labelStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                  child: TabBar(
+                    controller: _tabController,
+                    indicator: isNeo
+                        ? BoxDecoration(
+                            color: AppTheme.accent,
+                            border: Border(
+                              bottom: BorderSide(color: Colors.black, width: 2),
+                            ),
+                          )
+                        : BoxDecoration(
+                            gradient: AppTheme.accentGradient,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                    labelColor: isNeo ? Colors.black : Colors.white,
+                    unselectedLabelColor: isNeo ? AppTheme.accent : AppTheme.textMuted,
+                    labelStyle: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    tabs: [
+                      Tab(text: '  Incoming  '),
+                      Tab(text: '  Outgoing  '),
+                    ],
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  tabs: const [
-                    Tab(text: '  Incoming  '),
-                    Tab(text: '  Outgoing  '),
-                  ],
-                ),
-              ),
+                );
+              }),
             ],
           ),
         ),
@@ -644,7 +661,7 @@ class _TransfersScreenState extends State<TransfersScreen>
       stream: _incomingStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppTheme.accent),
           );
         }
@@ -674,7 +691,7 @@ class _TransfersScreenState extends State<TransfersScreen>
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, 32),
           itemCount: transfers.length,
           itemBuilder: (_, i) => _TransferCard(
             transfer: transfers[i],
@@ -697,7 +714,7 @@ class _TransfersScreenState extends State<TransfersScreen>
       stream: _outgoingStream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppTheme.accent),
           );
         }
@@ -726,7 +743,7 @@ class _TransfersScreenState extends State<TransfersScreen>
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, 32),
           itemCount: transfers.length,
           itemBuilder: (_, i) => _TransferCard(
             transfer: transfers[i],
@@ -759,9 +776,9 @@ class _TransfersScreenState extends State<TransfersScreen>
             ),
             child: Icon(icon, color: AppTheme.textMuted, size: 32),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
@@ -777,7 +794,7 @@ class _DownloadProgress {
   final int bytesTransferred;
   final int totalBytes;
 
-  _DownloadProgress({
+  const _DownloadProgress({
     required this.currentFile,
     required this.totalFiles,
     required this.bytesTransferred,
@@ -811,349 +828,344 @@ class _TransferCard extends StatelessWidget {
     final statusText = _statusText(isIncoming, transfer.status);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.bgCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isCompleted
-              ? AppTheme.success.withAlpha(60)
-              : isFailed || isExpired
-              ? AppTheme.error.withAlpha(60)
-              : AppTheme.border,
-        ),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header row
-                Row(
-                  children: [
-                    _StatusIcon(status: transfer.status),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isIncoming
-                                ? 'From: ${transfer.senderCode}'
-                                : 'To: ${transfer.receiverCode}',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          Text(
-                            _formatDate(transfer.createdAt),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    _StatusBadge(
-                      status: transfer.status,
-                      isIncoming: isIncoming,
-                    ),
-                  ],
-                ),
-
-                // Files list
-                if (transfer.files.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  ...transfer.files
-                      .take(3)
-                      .map(
-                        (f) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.insert_drive_file_rounded,
-                                size: 14,
-                                color: AppTheme.textMuted,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  f.name,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Text(
-                                TransferService.formatBytesStatic(f.sizeBytes),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  if (transfer.files.length > 3)
-                    Text(
-                      '+ ${transfer.files.length - 3} more file(s)',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall!.copyWith(color: AppTheme.accent),
-                    ),
-                ],
-
-                // TTL warning for pending transfers
-                if (transfer.status == TransferStatus.uploaded &&
-                    isIncoming &&
-                    !isDownloading) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.warning.withAlpha(30),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.timer_outlined,
-                          size: 14,
-                          color: AppTheme.warning,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Expires: ${_formatExpiry(transfer.expiresAt)}',
-                          style: Theme.of(context).textTheme.bodySmall!
-                              .copyWith(color: AppTheme.warning),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                if (isExpired) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.errorGlow,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.error_outline,
-                          size: 14,
-                          color: AppTheme.error,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'This transfer has expired (24h TTL)',
-                          style: Theme.of(context).textTheme.bodySmall!
-                              .copyWith(color: AppTheme.error),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Progress bar (receiver downloading)
-          if (isDownloading && downloadProgress != null) ...[
+      margin: EdgeInsets.only(bottom: 12),
+      child: FluxSurface(
+        borderColor: isCompleted
+            ? AppTheme.success.withAlpha(60)
+            : isFailed || isExpired
+            ? AppTheme.error.withAlpha(60)
+            : AppTheme.border,
+        child: Column(
+          children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    isIncoming
-                        ? 'Downloading file ${downloadProgress!.currentFile} of ${downloadProgress!.totalFiles}...'
-                        : 'Receiver is downloading the files...',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: downloadProgress!.totalBytes > 0
-                          ? downloadProgress!.bytesTransferred /
-                                downloadProgress!.totalBytes
-                          : null,
-                      backgroundColor: AppTheme.bgCardElevated,
-                      color: AppTheme.success,
-                      minHeight: 6,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onCancel,
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      label: const Text('Cancel Download'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.error,
-                        side: const BorderSide(color: AppTheme.error),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Receiver-side: sender is still uploading — show live progress
-          if (isIncoming && transfer.status == TransferStatus.uploading) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                  // Header row
                   Row(
                     children: [
-                      const SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppTheme.accent,
+                      _StatusIcon(status: transfer.status),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isIncoming
+                                  ? 'From: ${transfer.senderCode}'
+                                  : 'To: ${transfer.receiverCode}',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            Text(
+                              _formatDate(transfer.createdAt),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      _StatusBadge(
+                        status: transfer.status,
+                        isIncoming: isIncoming,
+                      ),
+                    ],
+                  ),
+
+                  // Files list
+                  if (transfer.files.isNotEmpty) ...[
+                    SizedBox(height: 12),
+                    ...transfer.files
+                        .take(3)
+                        .map(
+                          (f) => Padding(
+                            padding: EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.insert_drive_file_rounded,
+                                  size: 14,
+                                  color: AppTheme.textMuted,
+                                ),
+                                SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    f.name,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  TransferService.formatBytesStatic(
+                                    f.sizeBytes,
+                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    if (transfer.files.length > 3)
                       Text(
-                        'Receiving… ${(transfer.uploadProgress * 100).toStringAsFixed(0)}%',
+                        '+ ${transfer.files.length - 3} more file(s)',
                         style: Theme.of(
                           context,
                         ).textTheme.bodySmall!.copyWith(color: AppTheme.accent),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: transfer.uploadProgress > 0
-                          ? transfer.uploadProgress
-                          : null,
-                      backgroundColor: AppTheme.bgCardElevated,
-                      color: AppTheme.accent,
-                      minHeight: 6,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Download will be available once upload completes',
-                    style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                      fontSize: 10,
-                      color: AppTheme.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                  ],
 
-          // Upload progress (sender side only)
-          if (!isIncoming &&
-              transfer.status == TransferStatus.uploading &&
-              transfer.uploadProgress < 1.0) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$statusText ${(transfer.uploadProgress * 100).toStringAsFixed(1)}%',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: transfer.uploadProgress,
-                      backgroundColor: AppTheme.bgCardElevated,
-                      color: AppTheme.accent,
-                      minHeight: 6,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onCancel,
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      label: const Text('Cancel Upload'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.error,
-                        side: const BorderSide(color: AppTheme.error),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                  if (transfer.status == TransferStatus.uploaded &&
+                      isIncoming &&
+                      !isDownloading) ...[
+                    SizedBox(height: 10),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warning.withAlpha(30),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.timer_outlined,
+                            size: 14,
+                            color: AppTheme.warning,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Expires: ${_formatExpiry(transfer.expiresAt)}',
+                            style: Theme.of(context).textTheme.bodySmall!
+                                .copyWith(color: AppTheme.warning),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+                  ],
+
+                  if (isExpired) ...[
+                    SizedBox(height: 10),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorGlow,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 14,
+                            color: AppTheme.error,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'This transfer has expired (24h TTL)',
+                            style: Theme.of(context).textTheme.bodySmall!
+                                .copyWith(color: AppTheme.error),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ],
+            // Progress bar (receiver downloading)
+            if (isDownloading && downloadProgress != null) ...[
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isIncoming
+                          ? 'Downloading file ${downloadProgress!.currentFile} of ${downloadProgress!.totalFiles}...'
+                          : 'Receiver is downloading the files...',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: downloadProgress!.totalBytes > 0
+                            ? downloadProgress!.bytesTransferred /
+                                  downloadProgress!.totalBytes
+                            : null,
+                        backgroundColor: AppTheme.bgCardElevated,
+                        color: AppTheme.success,
+                        minHeight: 6,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    FluxButton(
+                      onPressed: onCancel,
+                      tone: FluxButtonTone.danger,
+                      outlined: true,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.close_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('Cancel Download'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
-          // Download button (for incoming uploaded or completed)
-          if (isIncoming &&
-              (transfer.status == TransferStatus.uploaded ||
-                  transfer.status == TransferStatus.completed) &&
-              !isDownloading) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                children: [
-                  if (transfer.status == TransferStatus.uploaded) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
+            // Receiver-side: sender is still uploading — show live progress
+            if (isIncoming && transfer.status == TransferStatus.uploading) ...[
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.accent,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Receiving… ${(transfer.uploadProgress * 100).toStringAsFixed(0)}%',
+                          style: Theme.of(context).textTheme.bodySmall!
+                              .copyWith(color: AppTheme.accent),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: transfer.uploadProgress > 0
+                            ? transfer.uploadProgress
+                            : null,
+                        backgroundColor: AppTheme.bgCardElevated,
+                        color: AppTheme.accent,
+                        minHeight: 6,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Download will be available once upload completes',
+                      style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                        fontSize: 10,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Upload progress (sender side only)
+            if (!isIncoming &&
+                transfer.status == TransferStatus.uploading &&
+                transfer.uploadProgress < 1.0) ...[
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$statusText ${(transfer.uploadProgress * 100).toStringAsFixed(1)}%',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: transfer.uploadProgress,
+                        backgroundColor: AppTheme.bgCardElevated,
+                        color: AppTheme.accent,
+                        minHeight: 6,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    FluxButton(
+                      onPressed: onCancel,
+                      tone: FluxButtonTone.danger,
+                      outlined: true,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.close_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('Cancel Upload'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Download button (for incoming uploaded or completed)
+            if (isIncoming &&
+                (transfer.status == TransferStatus.uploaded ||
+                    transfer.status == TransferStatus.completed) &&
+                !isDownloading) ...[
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  children: [
+                    if (transfer.status == TransferStatus.uploaded) ...[
+                      FluxButton(
                         onPressed: onDecline,
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        label: const Text('Decline'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.error,
-                          side: const BorderSide(color: AppTheme.error),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        tone: FluxButtonTone.danger,
+                        outlined: true,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.close_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Text('Decline'),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
+                      SizedBox(height: 12),
+                    ],
+                    FluxButton(
                       onPressed: transfer.status == TransferStatus.completed
                           ? () => onDownload?.call()
                           : onDownload,
-                      icon: Icon(
-                        isCompleted
-                            ? Icons.replay_rounded
-                            : Icons.check_circle_rounded,
-                        size: 18,
-                      ),
-                      label: Text(isCompleted ? 'Download Again' : 'Download'),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: AppTheme.success,
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: AppTheme.success),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      tone: FluxButtonTone.success,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isCompleted
+                                ? Icons.replay_rounded
+                                : Icons.check_circle_rounded,
+                            size: 18,
+                          ),
+                          SizedBox(width: 8),
+                          Text(isCompleted ? 'Download Again' : 'Accept'),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1288,7 +1300,7 @@ class _StatusBadge extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(6),
