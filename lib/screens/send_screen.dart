@@ -10,6 +10,7 @@ import '../core/theme.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/network_service.dart';
 import '../services/transfer_service.dart';
 
 class SendScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _SendScreenState extends State<SendScreen> {
   final _codeController = TextEditingController();
   final _transferService = TransferService();
   final _authService = AuthService();
+  final _networkService = NetworkService();
 
   List<PlatformFile> _selectedFiles = [];
   UserModel? _recipient;
@@ -184,6 +186,18 @@ class _SendScreenState extends State<SendScreen> {
       return;
     }
 
+    final totalBytes = _selectedFiles.fold<int>(
+      0,
+      (sum, file) => sum + file.size,
+    );
+    if (totalBytes > 50 * 1024 * 1024 &&
+        await _networkService.isLikelyMeteredConnection()) {
+      final confirmed = await _showMeteredWarning(
+        TransferService.formatBytesStatic(totalBytes),
+      );
+      if (!confirmed) return;
+    }
+
     setState(() {
       _sending = true;
       _cancelling = false;
@@ -235,18 +249,67 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
+  Future<bool> _showMeteredWarning(String sizeLabel) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.signal_cellular_alt_rounded,
+              color: AppTheme.warning,
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            const Text('Large Upload'),
+          ],
+        ),
+        content: Text(
+          'This transfer is $sizeLabel. Uploading on mobile data may use significant cellular quota.\n\nProceed anyway?',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppTheme.textMuted),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
+            child: const Text('Upload Anyway'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   void _showSuccessSheet(TransferModel transfer) {
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
       backgroundColor: AppTheme.bgCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            28,
+            28,
+            28,
+            28 + MediaQuery.viewPaddingOf(context).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             Container(
               width: 56,
               height: 56,
@@ -299,7 +362,8 @@ class _SendScreenState extends State<SendScreen> {
                 child: const Text('Send More Files'),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     ).then((_) {

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
+import 'file_preview_screen.dart';
+import '../services/network_service.dart';
 import '../services/notification_service.dart';
 import '../services/transfer_service.dart';
 
@@ -24,6 +27,7 @@ class _TransfersScreenState extends State<TransfersScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _transferService = TransferService();
+  final _networkService = NetworkService();
   late final Stream<List<TransferModel>> _incomingStream = _transferService
       .incomingTransfers(widget.user.uid);
   late final Stream<List<TransferModel>> _outgoingStream = _transferService
@@ -31,6 +35,9 @@ class _TransfersScreenState extends State<TransfersScreen>
 
   // Track active downloads to show progress
   final Map<String, _DownloadProgress> _activeDownloads = {};
+  // Track transfers already fully downloaded — prevent duplicate saves
+  final Set<String> _completedDownloads = {};
+  static const _storageChannel = MethodChannel('fluxdrop/storage');
 
   @override
   void initState() {
@@ -44,8 +51,39 @@ class _TransfersScreenState extends State<TransfersScreen>
     super.dispose();
   }
 
-  Future<void> _downloadTransfer(TransferModel transfer) async {
+  Future<void> _downloadTransfer(
+    TransferModel transfer, {
+    bool allowDuplicate = false,
+  }) async {
     if (_activeDownloads.containsKey(transfer.transferId)) return;
+
+    // Duplicate protection: if already downloaded in this session, skip silently
+    // (the user explicitly hit "Download Again" from the card for re-downloads)
+    final prefs = await SharedPreferences.getInstance();
+    final downloaded = prefs.getStringList('downloaded_transfers') ?? [];
+    if (!allowDuplicate &&
+        (_completedDownloads.contains(transfer.transferId) ||
+            downloaded.contains(transfer.transferId))) {
+      // Already downloaded — show a toast and skip (unless it was a re-attempt)
+      Fluttertoast.showToast(
+        msg: 'Already saved to your device',
+        backgroundColor: AppTheme.success,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_SHORT,
+      );
+      return;
+    }
+
+    // Warn only when the device is actually on a likely metered connection.
+    if (transfer.totalBytes > 50 * 1024 * 1024 &&
+        await _networkService.isLikelyMeteredConnection()) {
+      final sizeLabel = TransferService.formatBytesStatic(transfer.totalBytes);
+      final confirmed = await _showMeteredWarning(
+        sizeLabel,
+        actionLabel: 'Download Anyway',
+      );
+      if (!confirmed) return;
+    }
 
     // On Android: check if user has set a default save path in Settings
     String? customPath;
@@ -83,6 +121,13 @@ class _TransfersScreenState extends State<TransfersScreen>
 
       setState(() => _activeDownloads.remove(transfer.transferId));
 
+      // Mark as downloaded to prevent duplicate save
+      _completedDownloads.add(transfer.transferId);
+      final prefs2 = await SharedPreferences.getInstance();
+      final downloaded2 = prefs2.getStringList('downloaded_transfers') ?? [];
+      downloaded2.add(transfer.transferId);
+      await prefs2.setStringList('downloaded_transfers', downloaded2);
+
       await NotificationService().showLocalNotification(
         title: '✅ Download Complete',
         body:
@@ -91,7 +136,7 @@ class _TransfersScreenState extends State<TransfersScreen>
 
       if (mounted && paths.isNotEmpty) {
         final partialFailure = paths.length < transfer.files.length;
-        _showSavedSheet(paths, transfer, customPath: customPath);
+        _showSavedSheet(paths, customPath: customPath);
 
         if (partialFailure) {
           Fluttertoast.showToast(
@@ -144,6 +189,51 @@ class _TransfersScreenState extends State<TransfersScreen>
     }
   }
 
+  /// Shows a cellular data warning for large transfers.
+  /// Returns true if user confirms, false if cancelled.
+  Future<bool> _showMeteredWarning(
+    String sizeLabel, {
+    required String actionLabel,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.signal_cellular_alt_rounded,
+              color: AppTheme.warning,
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            const Text('Large Download'),
+          ],
+        ),
+        content: Text(
+          'This transfer is $sizeLabel. Large downloads can use significant data on metered connections.\n\nProceed anyway?',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppTheme.textMuted),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   void _declineTransfer(TransferModel transfer) {
     FirebaseFirestore.instance
         .collection('transfers')
@@ -151,98 +241,160 @@ class _TransfersScreenState extends State<TransfersScreen>
         .update({'status': 'rejected'});
   }
 
-  void _showSavedSheet(
-    List<String> paths,
-    TransferModel transfer, {
-    String? customPath,
-  }) {
+  void _showSavedSheet(List<String> paths, {String? customPath}) {
     FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
       backgroundColor: AppTheme.bgCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.successGradient,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.download_done_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  'Files Saved',
-                  style: Theme.of(context).textTheme.headlineLarge,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...paths.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.check_rounded,
-                      color: AppTheme.success,
-                      size: 16,
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          24 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.successGradient,
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        p.split('/').last,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    child: const Icon(
+                      Icons.download_done_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    'Files Saved',
+                    style: Theme.of(context).textTheme.headlineLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Platform.isIOS
+                      ? Colors.white.withAlpha(10)
+                      : AppTheme.bgCardElevated,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _savedLocationTitle(customPath: customPath),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _savedLocationSubtitle(customPath: customPath),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Saved to: ${_savedLocationLabel(paths, customPath: customPath)}',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall!.copyWith(color: AppTheme.textMuted),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _shareDownloadedFiles(paths),
-                icon: const Icon(Icons.ios_share_rounded),
-                label: Text(
-                  Platform.isIOS
-                      ? 'Save / Share Elsewhere'
-                      : 'Share / Save Elsewhere',
+              const SizedBox(height: 16),
+              ...paths.map(
+                (p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_rounded,
+                        color: AppTheme.success,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          p.split('/').last,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Done'),
+              const SizedBox(height: 16),
+              if (paths.length == 1 && _canPreview(paths.first)) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openPreview(paths.first);
+                    },
+                    icon: const Icon(Icons.visibility_rounded, size: 18),
+                    label: const Text('Open'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (_hasMediaFiles(paths)) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _saveToGallery(paths),
+                    icon: const Icon(Icons.photo_library_rounded, size: 18),
+                    label: Text(
+                      Platform.isIOS ? 'Save to Photos' : 'Save to Gallery',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _shareDownloadedFiles(paths),
+                  icon: const Icon(Icons.ios_share_rounded),
+                  label: Text(
+                    Platform.isIOS
+                        ? 'Save to Files / Share'
+                        : 'Save / Share Elsewhere',
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ).then((_) {
@@ -270,21 +422,113 @@ class _TransfersScreenState extends State<TransfersScreen>
     }
   }
 
-  String _savedLocationLabel(List<String> paths, {String? customPath}) {
-    if (customPath != null) {
-      return customPath;
+  void _openPreview(String path) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => FilePreviewScreen(path: path)));
+  }
+
+  bool _canPreview(String path) => supportsFilePreview(path);
+
+  /// Returns true if any of the saved paths are image or video files.
+  bool _hasMediaFiles(List<String> paths) {
+    const mediaExts = {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'heic',
+      'heif',
+      'mp4',
+      'mov',
+      'avi',
+      'mkv',
+      'webm',
+      '3gp',
+    };
+    return paths.any((p) {
+      final ext = p.split('.').last.toLowerCase();
+      return mediaExts.contains(ext);
+    });
+  }
+
+  /// Saves media files to the device gallery via the native platform channel.
+  /// This exercises the `fluxdrop/storage` method channel bonus integration.
+  Future<void> _saveToGallery(List<String> paths) async {
+    final mediaExts = {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'heic',
+      'heif',
+      'mp4',
+      'mov',
+      'avi',
+      'mkv',
+      'webm',
+      '3gp',
+    };
+    final mediaPaths = paths
+        .where((p) => mediaExts.contains(p.split('.').last.toLowerCase()))
+        .toList();
+
+    int saved = 0;
+    for (final path in mediaPaths) {
+      try {
+        await _storageChannel.invokeMethod('saveToGallery', {'path': path});
+        saved++;
+      } catch (e) {
+        debugPrint('⚠️ Gallery save failed for $path: $e');
+      }
     }
-    if (paths.isEmpty) {
-      return 'FluxDrop folder';
+
+    if (saved > 0) {
+      Fluttertoast.showToast(
+        msg: saved == 1
+            ? 'Saved to ${Platform.isIOS ? "Photos" : "Gallery"}'
+            : '$saved files saved to ${Platform.isIOS ? "Photos" : "Gallery"}',
+        backgroundColor: AppTheme.success,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_SHORT,
+      );
+    } else {
+      Fluttertoast.showToast(
+        msg: 'Could not save to gallery. Try sharing instead.',
+        backgroundColor: AppTheme.error,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
     }
-    return paths.first
-        .split('/')
-        .reversed
-        .skip(1)
-        .take(2)
-        .toList()
-        .reversed
-        .join('/');
+  }
+
+  String _storageDestinationLabel({String? customPath}) {
+    if (customPath != null && customPath.isNotEmpty) {
+      final parts = customPath
+          .split('/')
+          .where((part) => part.isNotEmpty)
+          .toList();
+      return parts.isEmpty ? 'your chosen device folder' : parts.last;
+    }
+    return 'FluxDrop app storage';
+  }
+
+  String _savedLocationTitle({String? customPath}) {
+    if (customPath != null && customPath.isNotEmpty) {
+      return Platform.isIOS
+          ? 'Saved to your chosen location'
+          : 'Saved to your device folder';
+    }
+    return 'Stored inside FluxDrop';
+  }
+
+  String _savedLocationSubtitle({String? customPath}) {
+    if (customPath != null && customPath.isNotEmpty) {
+      return 'Saved in ${_storageDestinationLabel(customPath: customPath)}. You can still open or share it below.';
+    }
+    return 'Available from Transfers. Use Open, Photos/Gallery, or Save to Files / Share to move it elsewhere.';
   }
 
   @override
@@ -393,7 +637,10 @@ class _TransfersScreenState extends State<TransfersScreen>
             transfer: transfers[i],
             isIncoming: true,
             downloadProgress: _activeDownloads[transfers[i].transferId],
-            onDownload: () => _downloadTransfer(transfers[i]),
+            onDownload: () => _downloadTransfer(
+              transfers[i],
+              allowDuplicate: transfers[i].status == TransferStatus.completed,
+            ),
             onDecline: () => _declineTransfer(transfers[i]),
             onCancel: () => _cancelDownload(transfers[i]),
           ),
@@ -841,7 +1088,9 @@ class _TransferCard extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: onDownload,
+                      onPressed: transfer.status == TransferStatus.completed
+                          ? () => onDownload?.call()
+                          : onDownload,
                       icon: Icon(
                         isCompleted
                             ? Icons.replay_rounded
