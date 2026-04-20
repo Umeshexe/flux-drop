@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -32,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _codeCopied = false;
   String? _autoStartTransferId;
 
+  // Live connectivity state
+  bool _isOnline = true;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
   // Global incoming transfer state
   Stream<List<TransferModel>>? _incomingStream;
 
@@ -54,6 +61,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // Expire old transfers on launch
     TransferService().expireOldTransfers();
 
+    // Live connectivity monitoring
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (mounted && online != _isOnline) {
+        setState(() => _isOnline = online);
+      }
+    });
+    // Seed initial state
+    Connectivity().checkConnectivity().then((results) {
+      if (mounted) {
+        setState(
+          () => _isOnline = results.any((r) => r != ConnectivityResult.none),
+        );
+      }
+    });
+
     NotificationService().openTransfersRequests.listen((_) {
       if (mounted) {
         setState(() => _selectedIndex = 2);
@@ -64,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _codeRevealController.dispose();
+    _connectivitySub?.cancel();
     super.dispose();
   }
 
@@ -587,79 +611,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   SizedBox(height: 6),
-                  if (isNeo)
-                    NeoPopCard(
-                      color: AppTheme.bgCard,
-                      borderColor: AppTheme.success,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 9,
-                              height: 9,
-                              decoration: BoxDecoration(
-                                color: AppTheme.success,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                'Firebase Connected',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppTheme.success,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 30,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.successGlow,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 9,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: AppTheme.success,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              'Firebase Connected',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppTheme.success,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // Live connectivity chip
+                  _ConnectivityChip(isOnline: _isOnline, isNeo: isNeo),
                 ],
               ),
             ),
@@ -987,39 +940,59 @@ class _IncomingReadyCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: FluxButton(
-                  onPressed: onDecline,
-                  tone: FluxButtonTone.danger,
-                  outlined: true,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.close_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text('Decline'),
-                    ],
-                  ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final shouldStack =
+                  constraints.maxWidth < 320 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.1;
+              final declineButton = FluxButton(
+                onPressed: onDecline,
+                tone: FluxButtonTone.danger,
+                outlined: true,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.close_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Flexible(child: Text('Decline', overflow: TextOverflow.fade)),
+                  ],
                 ),
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child: FluxButton(
-                  onPressed: onAccept,
-                  tone: FluxButtonTone.success,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.check_circle_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text('Accept'),
-                    ],
-                  ),
+              );
+              final acceptButton = FluxButton(
+                onPressed: onAccept,
+                tone: FluxButtonTone.success,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.check_circle_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Flexible(child: Text('Accept', overflow: TextOverflow.fade)),
+                  ],
                 ),
-              ),
-            ],
+              );
+
+              if (shouldStack) {
+                return Column(
+                  children: [
+                    declineButton,
+                    const SizedBox(height: 10),
+                    acceptButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: declineButton),
+                  const SizedBox(width: 10),
+                  Expanded(child: acceptButton),
+                ],
+              );
+            },
           ),
           SizedBox(height: 10),
           FluxButton(
@@ -1318,6 +1291,68 @@ class _NavItem extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Live connectivity chip for drawer ───────────────────────────────────────
+class _ConnectivityChip extends StatelessWidget {
+  final bool isOnline;
+  final bool isNeo;
+
+  const _ConnectivityChip({required this.isOnline, required this.isNeo});
+
+  @override
+  Widget build(BuildContext context) {
+    final dotColor = isOnline ? AppTheme.success : AppTheme.error;
+    final textColor = isOnline ? AppTheme.success : AppTheme.error;
+    final bgColor =
+        isOnline ? AppTheme.successGlow : AppTheme.errorGlow;
+    final label = isOnline ? 'Online — Firebase Connected' : 'Offline — No internet';
+    final borderColor = isOnline ? AppTheme.success : AppTheme.error;
+
+    final inner = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+        ),
+        SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (isNeo) {
+      return NeoPopCard(
+        color: AppTheme.bgCard,
+        borderColor: borderColor,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: inner,
+        ),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: inner,
     );
   }
 }

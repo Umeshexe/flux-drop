@@ -59,10 +59,42 @@ class FluxButton extends StatelessWidget {
   }
 
   Widget _material(BuildContext context) {
-    final buttonChild = Padding(padding: padding, child: child);
+    final content = DefaultTextStyle(
+      style: Theme.of(context).textTheme.labelLarge!.copyWith(
+        color: _foregroundColor,
+        fontWeight: FontWeight.w700,
+      ),
+      child: IconTheme(
+        data: IconThemeData(color: _foregroundColor, size: 18),
+        child: Padding(
+          padding: padding,
+          child: Center(child: child),
+        ),
+      ),
+    );
+
+    final elevatedStyle = Theme.of(context).elevatedButtonTheme.style?.copyWith(
+      padding: const MaterialStatePropertyAll(EdgeInsets.zero),
+      minimumSize: const MaterialStatePropertyAll(Size.zero),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+    final outlinedStyle = Theme.of(context).outlinedButtonTheme.style?.copyWith(
+      padding: const MaterialStatePropertyAll(EdgeInsets.zero),
+      minimumSize: const MaterialStatePropertyAll(Size.zero),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+
     final button = outlined
-        ? OutlinedButton(onPressed: onPressed, child: buttonChild)
-        : ElevatedButton(onPressed: onPressed, child: buttonChild);
+        ? OutlinedButton(
+            onPressed: onPressed,
+            style: outlinedStyle,
+            child: content,
+          )
+        : ElevatedButton(
+            onPressed: onPressed,
+            style: elevatedStyle,
+            child: content,
+          );
     return fullWidth ? SizedBox(width: double.infinity, child: button) : button;
   }
 

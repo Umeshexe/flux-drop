@@ -120,21 +120,21 @@ class _SendScreenState extends State<SendScreen> {
 
       if (result == null || result.files.isEmpty) return;
 
-      // Filter files that exceed 500 MB
+      // Filter oversized
       final oversized = result.files
           .where((f) => f.size > AppConstants.maxFileSizeBytes)
           .toList();
-
       if (oversized.isNotEmpty) {
         final names = oversized.map((f) => f.name).join(', ');
         _showSnack('⚠️ Files exceed 500 MB limit: $names', isError: true);
-        final valid = result.files
-            .where((f) => f.size <= AppConstants.maxFileSizeBytes)
-            .toList();
-        setState(() => _selectedFiles = valid);
-      } else {
-        setState(() => _selectedFiles = result.files);
       }
+
+      // All valid files — always append, duplicates are allowed and highlighted
+      final newValid = result.files
+          .where((f) => f.size <= AppConstants.maxFileSizeBytes)
+          .toList();
+
+      setState(() => _selectedFiles = [..._selectedFiles, ...newValid]);
 
       // ★ Zero-byte file warning
       final empty = _selectedFiles.where((f) => f.size == 0).toList();
@@ -143,7 +143,7 @@ class _SendScreenState extends State<SendScreen> {
           '⚠️ ${empty.length} zero-byte file(s) removed',
           isError: false,
         );
-        _selectedFiles.removeWhere((f) => f.size == 0);
+        setState(() => _selectedFiles.removeWhere((f) => f.size == 0));
       }
     } catch (e) {
       _showSnack('Failed to pick files: ${e.toString()}', isError: true);
@@ -582,13 +582,61 @@ class _SendScreenState extends State<SendScreen> {
                 ),
               )
             else ...[
-              // Show selected files
-              ..._selectedFiles.map(
-                (f) => _FileChip(
-                  file: f,
-                  onRemove: () => setState(() => _selectedFiles.remove(f)),
-                ),
-              ),
+              // Duplicate legend banner
+              Builder(builder: (context) {
+                final names = _selectedFiles.map((f) => f.name).toList();
+                final seen = <String>{};
+                final hasDuplicates = names.any((n) => !seen.add(n));
+                if (!hasDuplicates) return const SizedBox.shrink();
+                return Container(
+                  margin: EdgeInsets.only(bottom: 10),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withAlpha(25),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          size: 14, color: Colors.amber),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Amber colour = duplicate file name — will be sent as separate copies',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.amber,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              // Show selected files with duplicate detection
+              Builder(builder: (context) {
+                final nameCounts = <String, int>{};
+                for (final f in _selectedFiles) {
+                  nameCounts[f.name] = (nameCounts[f.name] ?? 0) + 1;
+                }
+                final nameOccurrence = <String, int>{};
+                return Column(
+                  children: _selectedFiles.map((f) {
+                    nameOccurrence[f.name] =
+                        (nameOccurrence[f.name] ?? 0) + 1;
+                    final isDuplicate = nameCounts[f.name]! > 1;
+                    return _FileChip(
+                      file: f,
+                      isDuplicate: isDuplicate,
+                      occurrenceIndex: nameOccurrence[f.name]!,
+                      onRemove: () =>
+                          setState(() => _selectedFiles.remove(f)),
+                    );
+                  }).toList(),
+                );
+              }),
               SizedBox(height: 10),
               FluxButton(
                 onPressed: _pickFiles,
@@ -660,28 +708,50 @@ class _SendScreenState extends State<SendScreen> {
 class _FileChip extends StatelessWidget {
   final PlatformFile file;
   final VoidCallback onRemove;
+  final bool isDuplicate;
+  final int occurrenceIndex;
 
-  const _FileChip({required this.file, required this.onRemove});
+  const _FileChip({
+    required this.file,
+    required this.onRemove,
+    this.isDuplicate = false,
+    this.occurrenceIndex = 1,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isOversized = file.size > AppConstants.maxFileSizeBytes;
 
+    // Colour logic: oversized = red, duplicate = amber, normal = default
+    final Color borderColor = isOversized
+        ? AppTheme.error
+        : isDuplicate
+        ? Colors.amber
+        : AppTheme.border;
+    final Color bgColor = isOversized
+        ? AppTheme.errorGlow
+        : isDuplicate
+        ? Colors.amber.withAlpha(20)
+        : AppTheme.bgCardElevated;
+    final Color iconColor = isOversized
+        ? AppTheme.error
+        : isDuplicate
+        ? Colors.amber
+        : AppTheme.accent;
+
     return Container(
       margin: EdgeInsets.only(bottom: 8),
       padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isOversized ? AppTheme.errorGlow : AppTheme.bgCardElevated,
+        color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isOversized ? AppTheme.error : AppTheme.border,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
           Icon(
             _iconForFile(file.extension ?? ''),
-            color: isOversized ? AppTheme.error : AppTheme.accent,
+            color: iconColor,
             size: 22,
           ),
           SizedBox(width: 12),
@@ -690,15 +760,25 @@ class _FileChip extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  file.name,
+                  isDuplicate && occurrenceIndex > 1
+                      ? '${file.name} (copy $occurrenceIndex)'
+                      : file.name,
                   style: Theme.of(context).textTheme.bodyLarge,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   TransferService.formatBytesStatic(file.size) +
-                      (isOversized ? ' — EXCEEDS 500 MB LIMIT' : ''),
+                      (isOversized
+                          ? ' — EXCEEDS 500 MB LIMIT'
+                          : isDuplicate
+                          ? ' — duplicate'
+                          : ''),
                   style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                    color: isOversized ? AppTheme.error : AppTheme.textMuted,
+                    color: isOversized
+                        ? AppTheme.error
+                        : isDuplicate
+                        ? Colors.amber
+                        : AppTheme.textMuted,
                   ),
                 ),
               ],

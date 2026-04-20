@@ -1,6 +1,8 @@
 package com.example.fluxdrop
 
 import android.content.ContentValues
+import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
@@ -18,6 +20,23 @@ class MainActivity: FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getWifiIp" -> {
+                    try {
+                        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                        @Suppress("DEPRECATION")
+                        val ip = wifiManager.connectionInfo.ipAddress
+                        val ipStr = String.format(
+                            "%d.%d.%d.%d",
+                            (ip and 0xff),
+                            (ip shr 8 and 0xff),
+                            (ip shr 16 and 0xff),
+                            (ip shr 24 and 0xff)
+                        )
+                        result.success(ipStr)
+                    } catch (e: Exception) {
+                        result.error("UNAVAILABLE", "WiFi IP not available: ${e.message}", null)
+                    }
+                }
                 "getFreeSpace" -> {
                     try {
                         val stat = StatFs(Environment.getDataDirectory().path)

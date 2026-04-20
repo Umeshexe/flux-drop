@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/transfer_service.dart';
 import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -79,6 +80,10 @@ class _SplashScreenState extends State<SplashScreen>
       debugPrint(
         '🚀 [Splash] User ready: ${user.shortCode} (uid: ${user.uid})',
       );
+
+      // Recover any orphaned transfers from a previous interrupted session
+      setState(() => _statusText = 'Checking pending transfers...');
+      await TransferService().recoverStaleTransfers(user.uid);
 
       setState(() => _statusText = 'Setting up notifications...');
       debugPrint('🔔 [Splash] Initializing notifications...');

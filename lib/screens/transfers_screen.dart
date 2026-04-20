@@ -102,6 +102,7 @@ class _TransfersScreenState extends State<TransfersScreen>
       customPath = prefs.getString('defaultSavePath');
     }
 
+    if (!mounted) return;
     setState(() {
       _activeDownloads[transfer.transferId] = _DownloadProgress(
         currentFile: 0,
@@ -129,7 +130,7 @@ class _TransfersScreenState extends State<TransfersScreen>
         },
       );
 
-      setState(() => _activeDownloads.remove(transfer.transferId));
+      if (mounted) setState(() => _activeDownloads.remove(transfer.transferId));
 
       // Mark as downloaded to prevent duplicate save
       _completedDownloads.add(transfer.transferId);
@@ -159,7 +160,7 @@ class _TransfersScreenState extends State<TransfersScreen>
         }
       }
     } catch (e) {
-      setState(() => _activeDownloads.remove(transfer.transferId));
+      if (mounted) setState(() => _activeDownloads.remove(transfer.transferId));
       Fluttertoast.showToast(
         msg: e is TransferCancelledException
             ? e.toString()
@@ -868,6 +869,43 @@ class _TransferCard extends StatelessWidget {
                         status: transfer.status,
                         isIncoming: isIncoming,
                       ),
+                      // LAN direct badge — shown when sender is on same subnet
+                      if (transfer.lanIp != null) ...[
+                        SizedBox(width: 6),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.cyan.withAlpha(30),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: Colors.cyan,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.wifi_rounded,
+                                size: 11,
+                                color: Colors.cyan,
+                              ),
+                              SizedBox(width: 3),
+                              Text(
+                                'LAN',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.cyan,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
 
@@ -941,6 +979,40 @@ class _TransferCard extends StatelessWidget {
                             'Expires: ${_formatExpiry(transfer.expiresAt)}',
                             style: Theme.of(context).textTheme.bodySmall!
                                 .copyWith(color: AppTheme.warning),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Sender cancelled or upload failed — show clear feedback to receiver
+                  if (isIncoming &&
+                      transfer.status == TransferStatus.failed) ...[
+                    SizedBox(height: 10),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorGlow,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cancel_outlined,
+                            size: 14,
+                            color: AppTheme.error,
+                          ),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Sender cancelled this transfer',
+                              style: Theme.of(context).textTheme.bodySmall!
+                                  .copyWith(color: AppTheme.error),
+                            ),
                           ),
                         ],
                       ),

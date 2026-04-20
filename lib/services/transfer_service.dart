@@ -13,6 +13,7 @@ import 'package:file_picker/file_picker.dart';
 import '../core/constants.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
+import 'lan_transfer_service.dart';
 
 class TransferCancelledException implements Exception {
   final String message;
@@ -27,12 +28,15 @@ class TransferService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final _uuid = const Uuid();
+  final _lan = LanTransferService();
   static const _storageChannel = MethodChannel('fluxdrop/storage');
   static UploadTask? _activeUploadTask;
   static String? _activeUploadTransferId;
   static bool _uploadCancelRequested = false;
   static final Map<String, DownloadTask> _activeDownloadTasks = {};
   static final Set<String> _downloadCancelRequested = <String>{};
+  // Track which transfers succeeded over LAN (for progress reporting)
+  static final Set<String> _lanCompletedTransfers = {};
 
   Future<bool> _hasEnoughStorage(int requiredBytes) async {
     if (kIsWeb) return true; // fallback
@@ -102,6 +106,7 @@ class TransferService {
             AppConstants.statusUploaded,
             AppConstants.statusDownloading,
             AppConstants.statusCompleted,
+            AppConstants.statusFailed, // sender may have cancelled mid-upload
           ],
         )
         .snapshots()
@@ -174,12 +179,38 @@ class TransferService {
     // Compute total bytes for aggregate progress
     final totalBytes = files.fold<int>(0, (total, f) => total + f.size);
 
+    // ── Nearby / LAN fast-path ──────────────────────────────────────────────
+    // Start a local TCP server so nearby receivers can bypass Firebase Storage.
+    // The server stays alive until the first receiver connects or 30 s elapses.
+    String? localIp;
+    int? lanPort;
+    try {
+      final localFiles = files.map((f) => File(f.path!)).toList();
+      final fileNames = files.map((f) => f.name).toList();
+      if (!kIsWeb) {
+        final server = await _lan.startServer(
+          files: localFiles,
+          fileNames: fileNames,
+          onProgress: (sent, total) {
+            // LAN sender progress is reported as an upload to keep the UI happy
+            onProgress(1, 1, sent, total);
+          },
+        );
+        localIp = server.ip;
+        lanPort = server.port;
+        debugPrint('📡 [LAN] TCP server ready on $localIp:$lanPort');
+      }
+    } catch (e) {
+      debugPrint('📡 [LAN] Could not start TCP server (will use cloud only): $e');
+    }
+
     debugPrint('📤 [Transfer] Creating Firestore doc: $transferId');
     // Create transfer document in Firestore with 'uploading' status
     final transferRef = _db
         .collection(AppConstants.transfersCollection)
         .doc(transferId);
 
+    // Create transfer document with LAN endpoint advertised (if available)
     await transferRef.set(
       TransferModel(
         transferId: transferId,
@@ -193,6 +224,8 @@ class TransferService {
         expiresAt: expiresAt,
         totalBytes: totalBytes,
         transferredBytes: 0,
+        lanIp: localIp,
+        lanPort: lanPort,
       ).toMap(),
     );
 
@@ -393,6 +426,57 @@ class TransferService {
       throw Exception('Insufficient storage space to download these files.');
     }
 
+    // ── Nearby / LAN fast-path ──────────────────────────────────────────────
+    // If the sender published a LAN endpoint and we are on the same /24 subnet,
+    // try a direct TCP connection before touching Firebase Storage.
+    final senderLanIp = transfer.lanIp;
+    final senderLanPort = transfer.lanPort;
+
+    if (senderLanIp != null && senderLanPort != null && !kIsWeb) {
+      try {
+        final myIp = await LanTransferService.getLocalIp();
+        final sameSubnet = LanTransferService.isSameSubnet(myIp, senderLanIp);
+        debugPrint(
+          '📡 [LAN] myIp=$myIp senderIp=$senderLanIp sameSubnet=$sameSubnet',
+        );
+
+        if (sameSubnet) {
+          // Collect expected hashes from Firestore FileInfo (set by sender at upload time)
+          final expectedHashes =
+              transfer.files.map((f) => f.sha256Hash).toList();
+
+          final lanPaths = await _lan.receiveFromServer(
+            serverIp: senderLanIp,
+            serverPort: senderLanPort,
+            outputDir: transferDir.path,
+            expectedHashes: expectedHashes,
+            onProgress: (received, _) {
+              final progress = totalBytes > 0 ? received / totalBytes : 0.0;
+              onProgress(1, transfer.files.length, received, totalBytes);
+              unawaited(
+                transferRef.update({'downloadProgress': progress}),
+              );
+            },
+          );
+
+          // ✅ LAN transfer succeeded
+          debugPrint('✅ [LAN] Direct transfer complete via TCP');
+          _lanCompletedTransfers.add(transfer.transferId);
+          await transferRef.update({
+            'status': AppConstants.statusCompleted,
+            'downloadProgress': 1.0,
+            'errorMessage': null,
+          });
+          return lanPaths;
+        }
+      } catch (e) {
+        debugPrint('📡 [LAN] Direct TCP failed, falling back to Firebase: $e');
+        // Continue to Firebase Storage fallback below
+      }
+    }
+
+    // ── Firebase Storage fallback ───────────────────────────────────────────
+    debugPrint('📥 [Transfer] Using Firebase Storage download path');
     try {
       int failures = 0;
       for (int i = 0; i < transfer.files.length; i++) {
@@ -523,6 +607,67 @@ class TransferService {
     } finally {
       _activeDownloadTasks.remove(transfer.transferId);
       _downloadCancelRequested.remove(transfer.transferId);
+    }
+  }
+
+  // ─── Recover stale transfers after app restart ────────────────────────────
+  /// Called once at startup after the user identity is resolved.
+  ///
+  /// Handles two interrupted-transfer scenarios:
+  ///  1. Sender killed mid-upload  → Firestore stays in 'uploading' forever.
+  ///     Fix: mark as 'failed' so receiver gets the "Sender cancelled" chip
+  ///     and sender can choose to re-send.
+  ///  2. Receiver killed mid-download → Firestore stays in 'downloading'.
+  ///     Fix: revert to 'uploaded' so the Accept button re-appears and the
+  ///     receiver can tap it again (Firebase Storage files survive for 24 h).
+  Future<void> recoverStaleTransfers(String uid) async {
+    try {
+      // ── Stale uploads (I was the sender) ──────────────────────────────────
+      final staleUploads = await _db
+          .collection(AppConstants.transfersCollection)
+          .where('senderId', isEqualTo: uid)
+          .where('status', isEqualTo: AppConstants.statusUploading)
+          .get();
+
+      for (final doc in staleUploads.docs) {
+        debugPrint(
+          '🔄 [Recovery] Marking stale upload as failed: ${doc.id}',
+        );
+        await doc.reference.update({
+          'status': AppConstants.statusFailed,
+          'errorMessage':
+              'Transfer interrupted — app was closed during upload. Please re-send.',
+        });
+      }
+
+      // ── Stale downloads (I was the receiver) ──────────────────────────────
+      final staleDownloads = await _db
+          .collection(AppConstants.transfersCollection)
+          .where('receiverId', isEqualTo: uid)
+          .where('status', isEqualTo: AppConstants.statusDownloading)
+          .get();
+
+      for (final doc in staleDownloads.docs) {
+        debugPrint(
+          '🔄 [Recovery] Reverting stale download to uploaded: ${doc.id}',
+        );
+        // Revert to uploaded so the Accept button reappears
+        await doc.reference.update({
+          'status': AppConstants.statusUploaded,
+          'downloadProgress': 0.0,
+          'errorMessage': null,
+        });
+      }
+
+      if (staleUploads.docs.isNotEmpty || staleDownloads.docs.isNotEmpty) {
+        debugPrint(
+          '🔄 [Recovery] Recovered ${staleUploads.docs.length} upload(s), '
+          '${staleDownloads.docs.length} download(s)',
+        );
+      }
+    } catch (e) {
+      // Non-fatal — silently skip if Firestore is unreachable on startup
+      debugPrint('🔄 [Recovery] skipped: $e');
     }
   }
 

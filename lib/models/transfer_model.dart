@@ -62,6 +62,9 @@ class TransferModel {
   final String? errorMessage;
   final int totalBytes;
   final int transferredBytes;
+  // Nearby / LAN fast-path: sender's local TCP server endpoint
+  final String? lanIp;
+  final int? lanPort;
 
   TransferModel({
     required this.transferId,
@@ -78,6 +81,8 @@ class TransferModel {
     this.errorMessage,
     this.totalBytes = 0,
     this.transferredBytes = 0,
+    this.lanIp,
+    this.lanPort,
   });
 
   static TransferStatus _statusFromString(String s) {
@@ -137,6 +142,8 @@ class TransferModel {
         'errorMessage': errorMessage,
         'totalBytes': totalBytes,
         'transferredBytes': transferredBytes,
+        if (lanIp != null) 'lanIp': lanIp,
+        if (lanPort != null) 'lanPort': lanPort,
       };
 
   factory TransferModel.fromMap(Map<String, dynamic> map) => TransferModel(
@@ -157,6 +164,8 @@ class TransferModel {
         errorMessage: map['errorMessage'] as String?,
         totalBytes: (map['totalBytes'] as num?)?.toInt() ?? 0,
         transferredBytes: (map['transferredBytes'] as num?)?.toInt() ?? 0,
+        lanIp: map['lanIp'] as String?,
+        lanPort: (map['lanPort'] as num?)?.toInt(),
       );
 
   TransferModel copyWith({
@@ -166,6 +175,8 @@ class TransferModel {
     List<FileInfo>? files,
     String? errorMessage,
     int? transferredBytes,
+    String? lanIp,
+    int? lanPort,
   }) =>
       TransferModel(
         transferId: transferId,
@@ -182,5 +193,7 @@ class TransferModel {
         errorMessage: errorMessage ?? this.errorMessage,
         totalBytes: totalBytes,
         transferredBytes: transferredBytes ?? this.transferredBytes,
+        lanIp: lanIp ?? this.lanIp,
+        lanPort: lanPort ?? this.lanPort,
       );
 }
