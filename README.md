@@ -88,7 +88,7 @@ Sender                              Firestore                 Receiver
 | **Short Code** | Crockford Base32 (6 chars) | Avoids O/0, I/l/1 ambiguity; 32^6 = ~1B combinations; collision retry loop |
 | **Real-time** | Firestore `onSnapshot` + FCM | Sub-second propagation; handles offline queue natively |
 | **Storage** | Firebase Storage | Resumable uploads; streaming; TLS by default; signed URLs |
-| **Push** | FCM data messages | Wakes app when closed; cross-platform |
+| **Push** | FCM data messages + Cloud Function trigger | Notifies the receiver when a transfer finishes uploading, even if the app is closed |
 | **File picker** | `file_picker` package | MVP speed (see Platform Channel section below) |
 | **Offline** | Firestore TTL queue (24h) | Transfer document persists; FCM delivers when device reconnects |
 | **Integrity** | SHA-256 checksums | Computed before upload; verified after download; mismatch = file deleted |
@@ -101,6 +101,7 @@ Sender                              Firestore                 Receiver
 - Flutter SDK (stable channel)
 - Android Studio / Xcode
 - Firebase project with Anonymous Auth + Firestore + Storage + FCM enabled
+- Firebase Functions enabled if you want closed-app push notifications
 
 ### Setup
 
@@ -115,6 +116,11 @@ flutter pub get
 # Configure Firebase (installs google-services.json + firebase_options.dart)
 dart pub global activate flutterfire_cli
 flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID
+
+# Install Cloud Function dependencies (for closed-app transfer notifications)
+cd functions
+npm install
+cd ..
 
 # Run
 flutter run
@@ -140,6 +146,18 @@ In Firebase Console → Firestore → Indexes, create composite indexes:
 
 ---
 
+### Firebase Function Deployment
+
+Deploy the notification trigger after logging into Firebase:
+
+```bash
+firebase deploy --only functions
+```
+
+This function sends an FCM push when a transfer moves to `uploaded`, which is how the recipient hears about incoming files while the app is closed.
+
+---
+
 ## Devices Tested
 
 | Device | OS | Role |
@@ -159,12 +177,12 @@ In Firebase Console → Firestore → Indexes, create composite indexes:
 | **Short-code collision** | Firestore `.where('shortCode', isEqualTo: code).limit(1)` check before commit; retry loop (max 10 attempts) |
 | **Invalid recipient code** | Client-side: length check (must be 6), alphabet check (Crockford Base32 only), self-send check — all fail fast with clear UI message before any network call |
 | **Ambiguous characters (O/0, I/1/l)** | Alphabet excludes O, I, L entirely: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` |
-| **Recipient offline** | Transfer stays in Firestore with 24h TTL. FCM delivers notification when device comes online. Status: `uploaded` until receiver downloads. |
+| **Recipient offline** | Transfer stays in Firestore with 24h TTL. A deployed Cloud Function sends FCM when upload completes; if push is unavailable, the transfer still appears via Firestore once the app is opened. |
 | **Network drop mid-transfer** | Firebase Storage SDK auto-retries upload tasks. If sender kills app, upload is lost (documented below under Known Bugs). |
-| **Large files (500 MB ceiling)** | Enforced in UI before upload starts. Firebase Storage streams bytes — no full in-memory load. OOM-safe. |
+| **Large files (500 MB ceiling)** | Enforced in UI before upload starts. Uploads stream from disk via `putFile`, and SHA-256 is computed from a file stream, so files are not loaded fully into memory. |
 | **Multiple files at once** | Per-file progress tracked with index. Aggregate progress = `bytesUploaded / totalBytes` across all files. Both sender and receiver see per-file + overall progress. |
 | **Permission denial** | Storage permission requested on Android; if permanently denied → dialog opens Settings. App degrades gracefully (can't pick files, but doesn't crash). |
-| **App closed when transfer arrives** | FCM data message → local notification shown. User taps → opens transfers screen. |
+| **App closed when transfer arrives** | Firestore-triggered Cloud Function sends FCM. Tapping the notification opens the app and routes to the Transfers tab. |
 
 ### Other edge cases
 
@@ -175,7 +193,7 @@ In Firebase Console → Firestore → Indexes, create composite indexes:
 | SHA-256 integrity | Computed pre-upload, verified post-download; mismatch deletes file and throws |
 | Duplicate transfer IDs | UUID v4 — astronomically unlikely; not handled beyond that |
 | Metered connections | Not warned (would add a `connectivity_plus` check in production) |
-| Scoped storage (Android 10+) | Files saved to app-private Documents directory (no scoped storage permission needed) |
+| Scoped storage (Android 10+) | Files save either to an app-private directory or to a user-selected directory. No arbitrary path writes. |
 | OEM battery optimisation | Documented limitation — user must whitelist app manually |
 | App killed mid-download | Download restarts from beginning (Firebase Storage doesn't support byte-range resume on client SDK) |
 | Expired transfers | `expireOldTransfers()` called on app launch, marks old transfers as `expired` |
@@ -202,7 +220,7 @@ Being brutally honest (they reward this):
 
 3. **No spam protection**: Anyone who guesses a valid short code can send you files. Fix: rate limiting in Firestore security rules (e.g., max 10 incoming transfers per user per hour).
 
-4. **FCM not tested end-to-end**: FCM requires a server-side trigger. In this build, the receiver relies on Firestore `onSnapshot` (which works while app is open) and the notification only fires for foreground messages. True background notification requires a Cloud Function to trigger FCM on transfer status change.
+4. **FCM requires deployment**: The repo now includes a Firestore-triggered Cloud Function for closed-app notifications, but you still need to deploy it in Firebase before recording the walkthrough.
 
 5. **Firestore composite indexes**: Must be created manually in Firebase Console (or via `firestore.indexes.json`). The app will show a Firestore error until indexes are created.
 

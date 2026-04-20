@@ -2,22 +2,90 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../core/constants.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
 
+class TransferCancelledException implements Exception {
+  final String message;
+
+  TransferCancelledException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class TransferService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final _uuid = const Uuid();
+  static const _storageChannel = MethodChannel('fluxdrop/storage');
+  static UploadTask? _activeUploadTask;
+  static String? _activeUploadTransferId;
+  static bool _uploadCancelRequested = false;
+  static final Map<String, DownloadTask> _activeDownloadTasks = {};
+  static final Set<String> _downloadCancelRequested = <String>{};
+
+  Future<bool> _hasEnoughStorage(int requiredBytes) async {
+    if (kIsWeb) return true; // fallback
+    try {
+      final int? freeSpace = await _storageChannel.invokeMethod('getFreeSpace');
+      if (freeSpace != null) {
+        // Buffer of 50 MB
+        return freeSpace > (requiredBytes + 50 * 1024 * 1024);
+      }
+    } catch (e) {
+      debugPrint('Storage check disabled or failed: $e');
+    }
+    return true; // Fallback: pretend we have space
+  }
+
+  Future<bool> cancelCurrentUpload() async {
+    final transferId = _activeUploadTransferId;
+    if (transferId == null) return false;
+    _uploadCancelRequested = true;
+    final task = _activeUploadTask;
+    if (task == null) {
+      return true;
+    }
+    try {
+      return await task.cancel();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> cancelUpload(String transferId) async {
+    if (_activeUploadTransferId != transferId) return false;
+    return cancelCurrentUpload();
+  }
+
+  Future<bool> cancelDownload(String transferId) async {
+    final hasTrackedDownload =
+        _activeDownloadTasks.containsKey(transferId) ||
+        _downloadCancelRequested.contains(transferId);
+    if (!hasTrackedDownload) return false;
+
+    _downloadCancelRequested.add(transferId);
+    final task = _activeDownloadTasks[transferId];
+    if (task == null) {
+      return true;
+    }
+
+    try {
+      return await task.cancel();
+    } catch (_) {
+      return true;
+    }
+  }
 
   // ─── Stream of incoming transfers for a receiver ──────────────────────────
   Stream<List<TransferModel>> incomingTransfers(String receiverId) {
@@ -30,7 +98,7 @@ class TransferService {
         .where(
           'status',
           whereIn: [
-            AppConstants.statusUploading,   // receiver sees live upload progress
+            AppConstants.statusUploading, // receiver sees live upload progress
             AppConstants.statusUploaded,
             AppConstants.statusDownloading,
             AppConstants.statusCompleted,
@@ -128,89 +196,139 @@ class TransferService {
       ).toMap(),
     );
 
-    // Upload files one by one
+    _activeUploadTransferId = transferId;
+    _uploadCancelRequested = false;
+
     final List<FileInfo> uploadedFiles = [];
     int bytesUploadedSoFar = 0;
 
-    for (int i = 0; i < files.length; i++) {
-      final platformFile = files[i];
-      debugPrint(
-        '📤 [Transfer] Uploading file ${i + 1}/${files.length}: ${platformFile.name} (${_formatBytes(platformFile.size)})',
-      );
-      final file = File(platformFile.path!);
-      final bytes = await file.readAsBytes();
+    try {
+      for (int i = 0; i < files.length; i++) {
+        _throwIfUploadCancelled(transferId);
 
-      // Compute SHA-256 for integrity verification
-      final hash = sha256.convert(bytes).toString();
+        final platformFile = files[i];
+        debugPrint(
+          '📤 [Transfer] Uploading file ${i + 1}/${files.length}: ${platformFile.name} (${_formatBytes(platformFile.size)})',
+        );
+        final file = File(platformFile.path!);
 
-      // Deduplicate: check if this hash already exists for this transfer
-      final storagePath = 'transfers/$transferId/${i}_${platformFile.name}';
-      final ref = _storage.ref(storagePath);
+        // Hash the file as a stream so large uploads do not need to fit in memory.
+        final hash = await sha256.bind(file.openRead()).first;
+        _throwIfUploadCancelled(transferId);
 
-      // Upload with progress tracking
-      final uploadTask = ref.putData(
-        bytes,
-        SettableMetadata(
-          contentType: platformFile.extension != null
-              ? _mimeFromExtension(platformFile.extension!)
-              : 'application/octet-stream',
-          customMetadata: {
-            'transferId': transferId,
-            'fileName': platformFile.name,
-            'sha256': hash,
-          },
-        ),
-      );
+        final storagePath = 'transfers/$transferId/${i}_${platformFile.name}';
+        final ref = _storage.ref(storagePath);
 
-      uploadTask.snapshotEvents.listen((snapshot) {
-        final fileBytesUploaded = snapshot.bytesTransferred;
-        final total = bytesUploadedSoFar + fileBytesUploaded;
-        onProgress(i + 1, files.length, total, totalBytes);
+        final uploadTask = ref.putFile(
+          file,
+          SettableMetadata(
+            contentType: platformFile.extension != null
+                ? _mimeFromExtension(platformFile.extension!)
+                : 'application/octet-stream',
+            customMetadata: {
+              'transferId': transferId,
+              'fileName': platformFile.name,
+              'sha256': hash.toString(),
+            },
+          ),
+        );
 
-        // Update Firestore with aggregate progress
-        final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-        transferRef.update({
-          'uploadProgress': progress,
-          'transferredBytes': total,
+        _activeUploadTask = uploadTask;
+
+        uploadTask.snapshotEvents.listen((snapshot) {
+          final fileBytesUploaded = snapshot.bytesTransferred;
+          final total = bytesUploadedSoFar + fileBytesUploaded;
+          onProgress(i + 1, files.length, total, totalBytes);
+
+          final progress = totalBytes > 0 ? total / totalBytes : 0.0;
+          transferRef.update({
+            'uploadProgress': progress,
+            'transferredBytes': total,
+          });
         });
-      });
 
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+        late final TaskSnapshot snapshot;
+        try {
+          snapshot = await uploadTask;
+        } on FirebaseException catch (e) {
+          if (_isUploadCancelled(transferId, e)) {
+            throw TransferCancelledException('Upload cancelled by user.');
+          }
+          rethrow;
+        } finally {
+          if (_activeUploadTransferId == transferId) {
+            _activeUploadTask = null;
+          }
+        }
 
-      bytesUploadedSoFar += platformFile.size;
+        _throwIfUploadCancelled(transferId);
 
-      uploadedFiles.add(
-        FileInfo(
-          name: platformFile.name,
-          mimeType: platformFile.extension != null
-              ? _mimeFromExtension(platformFile.extension!)
-              : 'application/octet-stream',
-          sizeBytes: platformFile.size,
-          downloadUrl: downloadUrl,
-          storagePath: storagePath,
-          sha256Hash: hash,
-        ),
-      );
+        final downloadUrl = await snapshot.ref.getDownloadURL();
 
-      // Update files list in Firestore as each file completes
+        bytesUploadedSoFar += platformFile.size;
+
+        uploadedFiles.add(
+          FileInfo(
+            name: platformFile.name,
+            mimeType: platformFile.extension != null
+                ? _mimeFromExtension(platformFile.extension!)
+                : 'application/octet-stream',
+            sizeBytes: platformFile.size,
+            downloadUrl: downloadUrl,
+            storagePath: storagePath,
+            sha256Hash: hash.toString(),
+          ),
+        );
+
+        await transferRef.update({
+          'files': uploadedFiles.map((f) => f.toMap()).toList(),
+          'uploadProgress': bytesUploadedSoFar / totalBytes,
+          'transferredBytes': bytesUploadedSoFar,
+        });
+      }
+
+      debugPrint('✅ [Transfer] All files uploaded. Status → uploaded');
       await transferRef.update({
-        'files': uploadedFiles.map((f) => f.toMap()).toList(),
-        'uploadProgress': bytesUploadedSoFar / totalBytes,
-        'transferredBytes': bytesUploadedSoFar,
+        'status': AppConstants.statusUploaded,
+        'uploadProgress': 1.0,
+        'transferredBytes': totalBytes,
+        'errorMessage': null,
       });
+
+      final finalDoc = await transferRef.get();
+      return TransferModel.fromMap(finalDoc.data()!);
+    } catch (e) {
+      if (_isUploadCancelled(transferId, e)) {
+        for (final file in uploadedFiles) {
+          final storagePath = file.storagePath;
+          if (storagePath == null) continue;
+          try {
+            await _storage.ref(storagePath).delete();
+          } catch (_) {}
+        }
+
+        await transferRef.update({
+          'status': AppConstants.statusFailed,
+          'files': <Map<String, dynamic>>[],
+          'uploadProgress': 0.0,
+          'transferredBytes': 0,
+          'errorMessage': 'Upload cancelled by user.',
+        });
+        throw TransferCancelledException('Upload cancelled by user.');
+      }
+
+      await transferRef.update({
+        'status': AppConstants.statusFailed,
+        'errorMessage': e.toString(),
+      });
+      rethrow;
+    } finally {
+      if (_activeUploadTransferId == transferId) {
+        _activeUploadTask = null;
+        _activeUploadTransferId = null;
+        _uploadCancelRequested = false;
+      }
     }
-
-    debugPrint('✅ [Transfer] All files uploaded. Status → uploaded');
-    // Mark as 'uploaded' — triggers receiver's real-time listener
-    await transferRef.update({
-      'status': AppConstants.statusUploaded,
-      'uploadProgress': 1.0,
-      'transferredBytes': totalBytes,
-    });
-
-    final finalDoc = await transferRef.get();
-    return TransferModel.fromMap(finalDoc.data()!);
   }
 
   // ─── Download a transfer ──────────────────────────────────────────────────
@@ -229,7 +347,7 @@ class TransferService {
     final String basePath =
         customPath ?? (await getApplicationDocumentsDirectory()).path;
     final transferDir = Directory('$basePath/FluxDrop/${transfer.transferId}');
-    
+
     try {
       await transferDir.create(recursive: true);
     } catch (e) {
@@ -238,7 +356,9 @@ class TransferService {
         'status': AppConstants.statusUploaded,
         'downloadProgress': 0.0,
       });
-      throw Exception('Could not create download directory. Please try a different location.');
+      throw Exception(
+        'Could not create download directory. Please try a different location.',
+      );
     }
 
     final List<String> savedPaths = [];
@@ -247,8 +367,19 @@ class TransferService {
         ? transfer.totalBytes
         : transfer.files.fold<int>(0, (s, f) => s + f.sizeBytes);
 
+    if (!await _hasEnoughStorage(totalBytes)) {
+      await transferRef.update({
+        'status': AppConstants.statusUploaded,
+        'downloadProgress': 0.0,
+      });
+      throw Exception('Insufficient storage space to download these files.');
+    }
+
     try {
+      int failures = 0;
       for (int i = 0; i < transfer.files.length; i++) {
+        _throwIfDownloadCancelled(transfer.transferId);
+
         final fileInfo = transfer.files[i];
         final savePath = '${transferDir.path}/${fileInfo.name}';
 
@@ -256,55 +387,113 @@ class TransferService {
         final resolvedPath = _resolveConflict(savePath);
         final saveFile = File(resolvedPath);
 
-        final ref = _storage.ref(fileInfo.storagePath!);
-        final downloadTask = ref.writeToFile(saveFile);
+        try {
+          final ref = _storage.ref(fileInfo.storagePath!);
+          final downloadTask = ref.writeToFile(saveFile);
+          _activeDownloadTasks[transfer.transferId] = downloadTask;
 
-        downloadTask.snapshotEvents.listen((snapshot) {
-          final fileBytesDownloaded = snapshot.bytesTransferred;
-          final total = bytesDownloadedSoFar + fileBytesDownloaded;
-          onProgress(i + 1, transfer.files.length, total, totalBytes);
+          downloadTask.snapshotEvents.listen((snapshot) {
+            final fileBytesDownloaded = snapshot.bytesTransferred;
+            final total = bytesDownloadedSoFar + fileBytesDownloaded;
+            onProgress(i + 1, transfer.files.length, total, totalBytes);
 
-          final progress = totalBytes > 0 ? total / totalBytes : 0.0;
-          transferRef.update({'downloadProgress': progress});
-        });
+            final progress = totalBytes > 0 ? total / totalBytes : 0.0;
+            transferRef.update({'downloadProgress': progress});
+          });
 
-        await downloadTask;
+          try {
+            await downloadTask;
+          } on FirebaseException catch (e) {
+            if (_isDownloadCancelled(transfer.transferId, e)) {
+              throw TransferCancelledException('Download cancelled by user.');
+            }
+            rethrow;
+          } finally {
+            _activeDownloadTasks.remove(transfer.transferId);
+          }
 
-        // Verify SHA-256 hash
-        final downloadedBytes = await saveFile.readAsBytes();
-        final computedHash = sha256.convert(downloadedBytes).toString();
-        if (fileInfo.sha256Hash.isNotEmpty &&
-            computedHash != fileInfo.sha256Hash) {
-          await saveFile.delete();
-          throw Exception(
-            'Integrity check failed for ${fileInfo.name}. File may be corrupted.',
-          );
+          _throwIfDownloadCancelled(transfer.transferId);
+
+          // Verify SHA-256 hash
+          final downloadedBytes = await saveFile.readAsBytes();
+          final computedHash = sha256.convert(downloadedBytes).toString();
+          if (fileInfo.sha256Hash.isNotEmpty &&
+              computedHash != fileInfo.sha256Hash) {
+            await saveFile.delete();
+            throw Exception(
+              'Integrity check failed for ${fileInfo.name}. File may be corrupted.',
+            );
+          }
+
+          bytesDownloadedSoFar += fileInfo.sizeBytes;
+          savedPaths.add(resolvedPath);
+        } catch (e) {
+          if (_isDownloadCancelled(transfer.transferId, e)) {
+            rethrow;
+          }
+          debugPrint('❌ [Transfer] Failed to download ${fileInfo.name}: $e');
+          failures++;
+          // Do NOT rethrow; continue to next file
         }
-
-        bytesDownloadedSoFar += fileInfo.sizeBytes;
-        savedPaths.add(resolvedPath);
       }
+
+      if (failures == transfer.files.length) {
+        throw Exception('All files failed to download.');
+      } else if (failures > 0) {
+        debugPrint('⚠️ [Transfer] $failures file(s) failed to download.');
+      }
+
+      final completedProgress = totalBytes > 0
+          ? bytesDownloadedSoFar / totalBytes
+          : (savedPaths.isNotEmpty ? 1.0 : 0.0);
 
       // Mark as completed
       await transferRef.update({
         'status': AppConstants.statusCompleted,
-        'downloadProgress': 1.0,
+        'downloadProgress': completedProgress,
+        'errorMessage': failures > 0
+            ? '$failures file(s) failed to download.'
+            : null,
       });
 
       return savedPaths;
     } catch (e) {
+      final cancelled = _isDownloadCancelled(transfer.transferId, e);
+
+      if (cancelled) {
+        try {
+          if (await transferDir.exists()) {
+            await transferDir.delete(recursive: true);
+          }
+        } catch (_) {}
+      }
+
       // Revert status on failure
       await transferRef.update({
         'status': AppConstants.statusUploaded,
         'downloadProgress': 0.0,
+        'errorMessage': cancelled
+            ? 'Download cancelled by user.'
+            : e.toString(),
       });
+
+      _activeDownloadTasks.remove(transfer.transferId);
+      _downloadCancelRequested.remove(transfer.transferId);
+
+      if (cancelled) {
+        throw TransferCancelledException('Download cancelled by user.');
+      }
 
       if (e.toString().contains('Operation not permitted')) {
         throw Exception(
-            'Android Storage Restriction: The selected folder is restricted. '
-            'Please try a different folder or use the Default location.');
+          'Android Storage Restriction: The selected folder is restricted. '
+          'Please try a different folder or use the Default location.',
+        );
       }
       rethrow;
+    } finally {
+      _activeDownloadTasks.remove(transfer.transferId);
+      _downloadCancelRequested.remove(transfer.transferId);
     }
   }
 
@@ -388,5 +577,37 @@ class TransferService {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  bool _isUploadCancelled(String transferId, Object error) {
+    if (_uploadCancelRequested && _activeUploadTransferId == transferId) {
+      return true;
+    }
+    if (error is TransferCancelledException) {
+      return true;
+    }
+    return error is FirebaseException && error.code == 'canceled';
+  }
+
+  bool _isDownloadCancelled(String transferId, Object error) {
+    if (_downloadCancelRequested.contains(transferId)) {
+      return true;
+    }
+    if (error is TransferCancelledException) {
+      return true;
+    }
+    return error is FirebaseException && error.code == 'canceled';
+  }
+
+  void _throwIfUploadCancelled(String transferId) {
+    if (_uploadCancelRequested && _activeUploadTransferId == transferId) {
+      throw TransferCancelledException('Upload cancelled by user.');
+    }
+  }
+
+  void _throwIfDownloadCancelled(String transferId) {
+    if (_downloadCancelRequested.contains(transferId)) {
+      throw TransferCancelledException('Download cancelled by user.');
+    }
   }
 }

@@ -1,10 +1,10 @@
 import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
@@ -90,47 +90,41 @@ class _TransfersScreenState extends State<TransfersScreen>
       );
 
       if (mounted && paths.isNotEmpty) {
-        // If Android user set a default path → saved silently, no sheet needed
-        if (Platform.isAndroid && customPath != null) {
+        final partialFailure = paths.length < transfer.files.length;
+        _showSavedSheet(paths, transfer, customPath: customPath);
+
+        if (partialFailure) {
           Fluttertoast.showToast(
-            msg: '✅ Saved to ${customPath!.split('/').last}',
-            backgroundColor: AppTheme.success,
+            msg:
+                'Downloaded ${paths.length}/${transfer.files.length} files. Some files failed.',
+            backgroundColor: AppTheme.warning,
             textColor: Colors.white,
             toastLength: Toast.LENGTH_LONG,
           );
-        } else {
-          // Native Share Sheet (iOS always, Android if no default path set)
-          final size = MediaQuery.of(context).size;
-          final result = await Share.shareXFiles(
-            paths.map((p) => XFile(p)).toList(),
-            sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
-          );
-
-          // Clean up temp files after Share Sheet closes
-          for (final p in paths) {
-            try { await File(p).delete(); } catch (_) {}
-          }
-          if (paths.isNotEmpty) {
-            try {
-              final parentDir = Directory(paths.first).parent;
-              if (await parentDir.exists()) await parentDir.delete(recursive: true);
-            } catch (_) {}
-          }
-
-          if (result.status == ShareResultStatus.dismissed && mounted) {
-            Fluttertoast.showToast(
-              msg: 'Dismissed. Tap "Download Again" to retry.',
-              backgroundColor: AppTheme.bgCard,
-              textColor: Colors.white,
-              toastLength: Toast.LENGTH_LONG,
-            );
-          }
         }
       }
     } catch (e) {
       setState(() => _activeDownloads.remove(transfer.transferId));
       Fluttertoast.showToast(
-        msg: 'Download failed: ${e.toString()}',
+        msg: e is TransferCancelledException
+            ? e.toString()
+            : 'Download failed: ${e.toString()}',
+        backgroundColor: e is TransferCancelledException
+            ? AppTheme.warning
+            : AppTheme.error,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
+    }
+  }
+
+  Future<void> _cancelDownload(TransferModel transfer) async {
+    final cancelled = await _transferService.cancelDownload(
+      transfer.transferId,
+    );
+    if (!cancelled) {
+      Fluttertoast.showToast(
+        msg: 'No active download to cancel',
         backgroundColor: AppTheme.error,
         textColor: Colors.white,
         toastLength: Toast.LENGTH_LONG,
@@ -138,61 +132,30 @@ class _TransfersScreenState extends State<TransfersScreen>
     }
   }
 
-  Future<String?> _showDownloadOptionsSheet() {
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppTheme.bgCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Download Location',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Where would you like to save these files?',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            ListTile(
-              leading: const Icon(Icons.folder_shared_rounded,
-                  color: AppTheme.accent),
-              title: const Text('Default Private Folder'),
-              subtitle: Text(Platform.isIOS ? 'Access via "Files" app > On My iPhone > FluxDrop' : 'Safe, app-internal storage'),
-              onTap: () => Navigator.pop(context, 'default'),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            if (!Platform.isIOS) ...[
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.folder_open_rounded,
-                    color: AppTheme.warning),
-                title: const Text('Choose Custom Folder'),
-                subtitle: const Text('Pick a folder (e.g., Downloads, Documents)'),
-                onTap: () => Navigator.pop(context, 'custom'),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
+  Future<void> _cancelOutgoingUpload(TransferModel transfer) async {
+    final cancelled = await _transferService.cancelUpload(transfer.transferId);
+    if (!cancelled) {
+      Fluttertoast.showToast(
+        msg: 'No active upload to cancel',
+        backgroundColor: AppTheme.error,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
+    }
   }
 
+  void _declineTransfer(TransferModel transfer) {
+    FirebaseFirestore.instance
+        .collection('transfers')
+        .doc(transfer.transferId)
+        .update({'status': 'rejected'});
+  }
 
-  void _showSavedSheet(List<String> paths, TransferModel transfer) {
+  void _showSavedSheet(
+    List<String> paths,
+    TransferModel transfer, {
+    String? customPath,
+  }) {
     FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
@@ -253,7 +216,7 @@ class _TransfersScreenState extends State<TransfersScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Saved to: ${paths.isNotEmpty ? paths.first.split('/').reversed.skip(1).take(2).toList().reversed.join('/') : 'FluxDrop folder'}',
+              'Saved to: ${_savedLocationLabel(paths, customPath: customPath)}',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall!.copyWith(color: AppTheme.textMuted),
@@ -261,7 +224,20 @@ class _TransfersScreenState extends State<TransfersScreen>
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: ElevatedButton.icon(
+                onPressed: () => _shareDownloadedFiles(paths),
+                icon: const Icon(Icons.ios_share_rounded),
+                label: Text(
+                  Platform.isIOS
+                      ? 'Save / Share Elsewhere'
+                      : 'Share / Save Elsewhere',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Done'),
               ),
@@ -273,6 +249,42 @@ class _TransfersScreenState extends State<TransfersScreen>
       // Ensure keyboard never reopens after sheet is dismissed
       FocusManager.instance.primaryFocus?.unfocus();
     });
+  }
+
+  Future<void> _shareDownloadedFiles(List<String> paths) async {
+    if (paths.isEmpty) return;
+
+    try {
+      final size = MediaQuery.of(context).size;
+      await Share.shareXFiles(
+        paths.map((path) => XFile(path)).toList(),
+        sharePositionOrigin: Rect.fromLTWH(0, 0, size.width, size.height / 2),
+      );
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'Could not open share sheet: $e',
+        backgroundColor: AppTheme.error,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
+    }
+  }
+
+  String _savedLocationLabel(List<String> paths, {String? customPath}) {
+    if (customPath != null) {
+      return customPath;
+    }
+    if (paths.isEmpty) {
+      return 'FluxDrop folder';
+    }
+    return paths.first
+        .split('/')
+        .reversed
+        .skip(1)
+        .take(2)
+        .toList()
+        .reversed
+        .join('/');
   }
 
   @override
@@ -382,6 +394,8 @@ class _TransfersScreenState extends State<TransfersScreen>
             isIncoming: true,
             downloadProgress: _activeDownloads[transfers[i].transferId],
             onDownload: () => _downloadTransfer(transfers[i]),
+            onDecline: () => _declineTransfer(transfers[i]),
+            onCancel: () => _cancelDownload(transfers[i]),
           ),
         );
       },
@@ -429,6 +443,8 @@ class _TransfersScreenState extends State<TransfersScreen>
             isIncoming: false,
             downloadProgress: null,
             onDownload: null,
+            onDecline: null,
+            onCancel: () => _cancelOutgoingUpload(transfers[i]),
           ),
         );
       },
@@ -484,12 +500,16 @@ class _TransferCard extends StatelessWidget {
   final bool isIncoming;
   final _DownloadProgress? downloadProgress;
   final VoidCallback? onDownload;
+  final VoidCallback? onDecline;
+  final VoidCallback? onCancel;
 
   const _TransferCard({
     required this.transfer,
     required this.isIncoming,
     required this.downloadProgress,
     required this.onDownload,
+    required this.onDecline,
+    required this.onCancel,
   });
 
   @override
@@ -498,6 +518,7 @@ class _TransferCard extends StatelessWidget {
     final isExpired = transfer.status == TransferStatus.expired;
     final isCompleted = transfer.status == TransferStatus.completed;
     final isFailed = transfer.status == TransferStatus.failed;
+    final statusText = _statusText(isIncoming, transfer.status);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -541,7 +562,10 @@ class _TransferCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    _StatusBadge(status: transfer.status),
+                    _StatusBadge(
+                      status: transfer.status,
+                      isIncoming: isIncoming,
+                    ),
                   ],
                 ),
 
@@ -659,7 +683,9 @@ class _TransferCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Downloading file ${downloadProgress!.currentFile} of ${downloadProgress!.totalFiles}...',
+                    isIncoming
+                        ? 'Downloading file ${downloadProgress!.currentFile} of ${downloadProgress!.totalFiles}...'
+                        : 'Receiver is downloading the files...',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 6),
@@ -673,6 +699,20 @@ class _TransferCard extends StatelessWidget {
                       backgroundColor: AppTheme.bgCardElevated,
                       color: AppTheme.success,
                       minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: onCancel,
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      label: const Text('Cancel Download'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.error,
+                        side: const BorderSide(color: AppTheme.error),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
                   ),
                 ],
@@ -690,15 +730,19 @@ class _TransferCard extends StatelessWidget {
                   Row(
                     children: [
                       const SizedBox(
-                        width: 10, height: 10,
+                        width: 10,
+                        height: 10,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppTheme.accent),
+                          strokeWidth: 2,
+                          color: AppTheme.accent,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Receiving… ${(transfer.uploadProgress * 100).toStringAsFixed(0)}%',
-                        style: Theme.of(context).textTheme.bodySmall!
-                            .copyWith(color: AppTheme.accent),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall!.copyWith(color: AppTheme.accent),
                       ),
                     ],
                   ),
@@ -707,7 +751,8 @@ class _TransferCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: transfer.uploadProgress > 0
-                          ? transfer.uploadProgress : null,
+                          ? transfer.uploadProgress
+                          : null,
                       backgroundColor: AppTheme.bgCardElevated,
                       color: AppTheme.accent,
                       minHeight: 6,
@@ -716,8 +761,10 @@ class _TransferCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Download will be available once upload completes',
-                    style: Theme.of(context).textTheme.bodySmall!
-                        .copyWith(fontSize: 10, color: AppTheme.textMuted),
+                    style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                      fontSize: 10,
+                      color: AppTheme.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -729,12 +776,12 @@ class _TransferCard extends StatelessWidget {
               transfer.status == TransferStatus.uploading &&
               transfer.uploadProgress < 1.0) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Uploading... ${(transfer.uploadProgress * 100).toStringAsFixed(1)}%',
+                    '$statusText ${(transfer.uploadProgress * 100).toStringAsFixed(1)}%',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 6),
@@ -745,6 +792,20 @@ class _TransferCard extends StatelessWidget {
                       backgroundColor: AppTheme.bgCardElevated,
                       color: AppTheme.accent,
                       minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: onCancel,
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      label: const Text('Cancel Upload'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.error,
+                        side: const BorderSide(color: AppTheme.error),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
                   ),
                 ],
@@ -759,27 +820,43 @@ class _TransferCard extends StatelessWidget {
               !isDownloading) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: onDownload,
-                  icon: Icon(
-                    isCompleted
-                        ? Icons.replay_rounded
-                        : Icons.download_rounded,
-                    size: 18,
+              child: Column(
+                children: [
+                  if (transfer.status == TransferStatus.uploaded) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: onDecline,
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        label: const Text('Decline'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.error,
+                          side: const BorderSide(color: AppTheme.error),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onDownload,
+                      icon: Icon(
+                        isCompleted
+                            ? Icons.replay_rounded
+                            : Icons.check_circle_rounded,
+                        size: 18,
+                      ),
+                      label: Text(isCompleted ? 'Download Again' : 'Accept'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.success,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
                   ),
-                  label: Text(
-                    isCompleted
-                        ? 'Download Again'
-                        : 'Download ${transfer.files.length} file(s) · ${TransferService.formatBytesStatic(transfer.totalBytes)}',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isCompleted ? AppTheme.accent : AppTheme.success,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
+                ],
               ),
             ),
           ],
@@ -802,6 +879,40 @@ class _TransferCard extends StatelessWidget {
     if (diff.isNegative) return 'Expired';
     if (diff.inHours > 0) return 'in ${diff.inHours}h ${diff.inMinutes % 60}m';
     return 'in ${diff.inMinutes}m';
+  }
+
+  String _statusText(bool isIncoming, TransferStatus status) {
+    if (isIncoming) {
+      switch (status) {
+        case TransferStatus.uploading:
+          return 'Receiving';
+        case TransferStatus.uploaded:
+          return 'Ready to accept';
+        case TransferStatus.downloading:
+          return 'Downloading';
+        case TransferStatus.completed:
+          return 'Download complete';
+        case TransferStatus.rejected:
+          return 'Declined';
+        default:
+          return 'Pending';
+      }
+    }
+
+    switch (status) {
+      case TransferStatus.uploading:
+        return 'Uploading...';
+      case TransferStatus.uploaded:
+        return 'Waiting for receiver';
+      case TransferStatus.downloading:
+        return 'Receiver downloading';
+      case TransferStatus.completed:
+        return 'Received';
+      case TransferStatus.rejected:
+        return 'Declined';
+      default:
+        return 'Pending';
+    }
   }
 }
 
@@ -827,6 +938,9 @@ class _StatusIcon extends StatelessWidget {
       case TransferStatus.expired:
         color = AppTheme.error;
         icon = Icons.timer_off_rounded;
+      case TransferStatus.rejected:
+        color = AppTheme.error;
+        icon = Icons.block_rounded;
       default:
         color = AppTheme.warning;
         icon = Icons.schedule_rounded;
@@ -837,7 +951,8 @@ class _StatusIcon extends StatelessWidget {
 
 class _StatusBadge extends StatelessWidget {
   final TransferStatus status;
-  const _StatusBadge({required this.status});
+  final bool isIncoming;
+  const _StatusBadge({required this.status, required this.isIncoming});
 
   @override
   Widget build(BuildContext context) {
@@ -848,19 +963,19 @@ class _StatusBadge extends StatelessWidget {
       case TransferStatus.completed:
         bg = AppTheme.successGlow;
         fg = AppTheme.success;
-        label = 'Done';
+        label = isIncoming ? 'Done' : 'Received';
       case TransferStatus.uploading:
         bg = AppTheme.accentGlow;
         fg = AppTheme.accent;
-        label = 'Uploading';
+        label = isIncoming ? 'Receiving' : 'Uploading';
       case TransferStatus.uploaded:
-        bg = AppTheme.accentGlow;
-        fg = AppTheme.accent;
-        label = 'Ready';
+        bg = AppTheme.warning.withAlpha(30);
+        fg = AppTheme.warning;
+        label = isIncoming ? 'Ready' : 'Waiting';
       case TransferStatus.downloading:
         bg = AppTheme.successGlow;
         fg = AppTheme.success;
-        label = 'Downloading';
+        label = isIncoming ? 'Downloading' : 'Receiving';
       case TransferStatus.failed:
         bg = AppTheme.errorGlow;
         fg = AppTheme.error;
@@ -869,6 +984,10 @@ class _StatusBadge extends StatelessWidget {
         bg = AppTheme.errorGlow;
         fg = AppTheme.error;
         label = 'Expired';
+      case TransferStatus.rejected:
+        bg = AppTheme.errorGlow;
+        fg = AppTheme.error;
+        label = 'Rejected';
       default:
         bg = AppTheme.bgCardElevated;
         fg = AppTheme.textMuted;

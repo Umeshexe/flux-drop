@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../core/constants.dart';
 import '../core/theme.dart';
 import '../models/transfer_model.dart';
 import '../models/user_model.dart';
+import '../services/notification_service.dart';
 import '../services/transfer_service.dart';
 import 'send_screen.dart';
 import 'settings_screen.dart';
@@ -12,14 +12,15 @@ import 'transfers_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserModel user;
-  const HomeScreen({super.key, required this.user});
+  final int initialTabIndex;
+
+  const HomeScreen({super.key, required this.user, this.initialTabIndex = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   late AnimationController _codeRevealController;
@@ -28,11 +29,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Global incoming transfer state
   Stream<List<TransferModel>>? _incomingStream;
-  List<TransferModel> _activeIncoming = [];
 
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialTabIndex;
     _codeRevealController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -47,6 +48,12 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Expire old transfers on launch
     TransferService().expireOldTransfers();
+
+    NotificationService().openTransfersRequests.listen((_) {
+      if (mounted) {
+        setState(() => _selectedIndex = 2);
+      }
+    });
   }
 
   @override
@@ -93,8 +100,11 @@ class _HomeScreenState extends State<HomeScreen>
                     shape: BoxShape.circle,
                     gradient: AppTheme.accentGradient,
                   ),
-                  child: const Icon(Icons.bolt_rounded,
-                      color: Colors.white, size: 22),
+                  child: const Icon(
+                    Icons.bolt_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Column(
@@ -111,8 +121,11 @@ class _HomeScreenState extends State<HomeScreen>
                   ],
                 ),
                 const Spacer(),
-                const Icon(Icons.settings_rounded,
-                    color: AppTheme.textMuted, size: 20),
+                const Icon(
+                  Icons.settings_rounded,
+                  color: AppTheme.textMuted,
+                  size: 20,
+                ),
               ],
             ),
           ),
@@ -134,7 +147,10 @@ class _HomeScreenState extends State<HomeScreen>
                             color: AppTheme.accent.withAlpha(80),
                           ),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -158,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    active.first.status == TransferStatus.uploading
+                                    active.first.status ==
+                                            TransferStatus.uploading
                                         ? 'Incoming from ${active.first.senderCode}'
                                         : 'Downloading from ${active.first.senderCode}',
                                     style: const TextStyle(
@@ -169,7 +186,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   ),
                                 ),
                                 Text(
-                                  active.first.status == TransferStatus.uploading
+                                  active.first.status ==
+                                          TransferStatus.uploading
                                       ? _fmtSize(active.first.totalBytes)
                                       : _fmtSize(active.first.totalBytes),
                                   style: const TextStyle(
@@ -185,10 +203,12 @@ class _HomeScreenState extends State<HomeScreen>
                             ClipRRect(
                               borderRadius: BorderRadius.circular(4),
                               child: LinearProgressIndicator(
-                                value: active.first.status == TransferStatus.uploading
+                                value:
+                                    active.first.status ==
+                                        TransferStatus.uploading
                                     ? (active.first.uploadProgress > 0
-                                        ? active.first.uploadProgress
-                                        : null)
+                                          ? active.first.uploadProgress
+                                          : null)
                                     : null,
                                 backgroundColor: AppTheme.bgCardElevated,
                                 color: AppTheme.accent,
@@ -200,16 +220,21 @@ class _HomeScreenState extends State<HomeScreen>
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  active.first.status == TransferStatus.uploading
+                                  active.first.status ==
+                                          TransferStatus.uploading
                                       ? 'Receiving… ${(active.first.uploadProgress * 100).toStringAsFixed(0)}%'
                                       : 'Downloading files…',
                                   style: Theme.of(context).textTheme.bodySmall!
-                                      .copyWith(color: AppTheme.accent, fontSize: 11),
+                                      .copyWith(
+                                        color: AppTheme.accent,
+                                        fontSize: 11,
+                                      ),
                                 ),
                                 Text(
                                   '${active.first.files.length} file(s)',
-                                  style: Theme.of(context).textTheme.bodySmall!
-                                      .copyWith(fontSize: 11),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall!.copyWith(fontSize: 11),
                                 ),
                               ],
                             ),
@@ -228,7 +253,8 @@ class _HomeScreenState extends State<HomeScreen>
             copied: _codeCopied,
             onCopy: () async {
               await Clipboard.setData(
-                  ClipboardData(text: widget.user.shortCode));
+                ClipboardData(text: widget.user.shortCode),
+              );
               setState(() => _codeCopied = true);
               await Future.delayed(const Duration(seconds: 2));
               if (mounted) setState(() => _codeCopied = false);
@@ -238,10 +264,7 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 24),
 
           // Quick actions
-          Text(
-            'Quick Actions',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Quick Actions', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -301,13 +324,17 @@ class _HomeScreenState extends State<HomeScreen>
       stream: _incomingStream,
       builder: (context, snap) {
         final incoming = snap.data ?? [];
-        final active = incoming.where((t) =>
-          t.status == TransferStatus.uploading ||
-          t.status == TransferStatus.downloading
-        ).toList();
-        final hasBadge = incoming.any((t) =>
-          t.status == TransferStatus.uploading ||
-          t.status == TransferStatus.uploaded
+        final active = incoming
+            .where(
+              (t) =>
+                  t.status == TransferStatus.uploading ||
+                  t.status == TransferStatus.downloading,
+            )
+            .toList();
+        final hasBadge = incoming.any(
+          (t) =>
+              t.status == TransferStatus.uploading ||
+              t.status == TransferStatus.uploaded,
         );
         return Scaffold(
           key: _scaffoldKey,
@@ -377,8 +404,11 @@ class _HomeScreenState extends State<HomeScreen>
                       shape: BoxShape.circle,
                       gradient: AppTheme.accentGradient,
                     ),
-                    child: const Icon(Icons.bolt_rounded,
-                        color: Colors.white, size: 30),
+                    child: const Icon(
+                      Icons.bolt_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -387,28 +417,35 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 30,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.successGlow,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          width: 8, height: 8,
+                          width: 9,
+                          height: 8,
                           decoration: const BoxDecoration(
                             color: AppTheme.success,
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Online — Firebase Connected',
-                          style: TextStyle(
-                            color: AppTheme.success,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                        const Flexible(
+                          child: Text(
+                            'Firebase Connected',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.success,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -419,9 +456,18 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             const Divider(color: AppTheme.border, height: 1),
             ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              leading: const Icon(Icons.settings_rounded, color: AppTheme.textPrimary),
-              title: const Text('Settings', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 8,
+              ),
+              leading: const Icon(
+                Icons.settings_rounded,
+                color: AppTheme.textPrimary,
+              ),
+              title: const Text(
+                'Settings',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+              ),
               onTap: () {
                 Navigator.pop(context); // close drawer
                 Navigator.push(
@@ -431,9 +477,18 @@ class _HomeScreenState extends State<HomeScreen>
               },
             ),
             ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              leading: const Icon(Icons.info_outline_rounded, color: AppTheme.textPrimary),
-              title: const Text('About FluxDrop', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 8,
+              ),
+              leading: const Icon(
+                Icons.info_outline_rounded,
+                color: AppTheme.textPrimary,
+              ),
+              title: const Text(
+                'About FluxDrop',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 // Can show an about dialog here
@@ -495,14 +550,17 @@ class _YourCodeCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.fingerprint_rounded,
-                    color: Colors.white70, size: 18),
+                const Icon(
+                  Icons.fingerprint_rounded,
+                  color: Colors.white70,
+                  size: 18,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Your FluxDrop Code',
-                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                        color: Colors.white70,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall!.copyWith(color: Colors.white70),
                 ),
               ],
             ),
@@ -526,7 +584,9 @@ class _YourCodeCard extends StatelessWidget {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: copied
                           ? AppTheme.success.withAlpha(60)
@@ -537,9 +597,7 @@ class _YourCodeCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          copied
-                              ? Icons.check_rounded
-                              : Icons.copy_rounded,
+                          copied ? Icons.check_rounded : Icons.copy_rounded,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -547,9 +605,10 @@ class _YourCodeCard extends StatelessWidget {
                         Text(
                           copied ? 'Copied!' : 'Copy',
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600),
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -560,10 +619,9 @@ class _YourCodeCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Share this code with anyone to receive files',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall!
-                  .copyWith(color: Colors.white60),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall!.copyWith(color: Colors.white60),
             ),
           ],
         ),

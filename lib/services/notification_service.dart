@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -17,24 +18,23 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  final StreamController<String?> _openTransfersController =
+      StreamController<String?>.broadcast();
 
-  Future<void> initialize() async {
-    // Request permissions (Skipped on iOS for Personal Team to avoid EXC_BAD_ACCESS)
-    if (!Platform.isIOS) {
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-    }
+  Stream<String?> get openTransfersRequests => _openTransfersController.stream;
 
+  Future<bool> initialize() async {
     // Local notifications setup
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    // Do NOT set requestAlertPermission etc. here — on personal-team iOS builds
+    // those flags trigger APNs registration which crashes with EXC_BAD_ACCESS.
+    // Permissions are handled separately below only on supported builds.
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
     const initSettings = InitializationSettings(
       android: androidSettings,
@@ -42,6 +42,19 @@ class NotificationService {
     );
 
     await _localNotifications.initialize(settings: initSettings);
+
+    // iOS sender builds in this assessment environment have been unstable when
+    // Firebase Messaging is initialized directly without the full APNs setup.
+    // Keep local notifications available, but only wire FCM listeners on Android.
+    if (Platform.isIOS) {
+      return false;
+    }
+
+    await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
     // Android notification channel
     if (Platform.isAndroid) {
@@ -53,17 +66,25 @@ class NotificationService {
       );
       await _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(channel);
     }
 
-    if (!Platform.isIOS) {
-      // Handle FCM foreground messages
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    // Handle FCM foreground messages
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-      // Handle background taps
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+    // Handle notification taps when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
+    // Handle notification tap when app was fully closed
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      _handleNotificationTap(initialMessage);
+      return true;
     }
+
+    return false;
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
@@ -75,8 +96,7 @@ class NotificationService {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
-    // Navigate to transfers screen
-    // This will be handled via GlobalKey<NavigatorState> in production
+    _openTransfersController.add(message.data['transferId'] as String?);
   }
 
   Future<void> showLocalNotification({

@@ -36,6 +36,7 @@ class _SendScreenState extends State<SendScreen> {
   int _totalFiles = 0;
   int _bytesTransferred = 0;
   int _totalBytes = 0;
+  bool _cancelling = false;
 
   @override
   void dispose() {
@@ -185,6 +186,7 @@ class _SendScreenState extends State<SendScreen> {
 
     setState(() {
       _sending = true;
+      _cancelling = false;
       _bytesTransferred = 0;
       _totalBytes = 0;
       _currentFileIndex = 0;
@@ -211,8 +213,25 @@ class _SendScreenState extends State<SendScreen> {
       setState(() => _sending = false);
       _showSuccessSheet(transfer);
     } catch (e) {
-      setState(() => _sending = false);
-      _showSnack('Transfer failed: ${e.toString()}', isError: true);
+      setState(() {
+        _sending = false;
+        _cancelling = false;
+      });
+      if (e is TransferCancelledException) {
+        _showSnack(e.toString(), isError: false);
+      } else {
+        _showSnack('Transfer failed: ${e.toString()}', isError: true);
+      }
+    }
+  }
+
+  Future<void> _cancelUpload() async {
+    if (_cancelling) return;
+    setState(() => _cancelling = true);
+    final cancelled = await _transferService.cancelCurrentUpload();
+    if (!cancelled && mounted) {
+      setState(() => _cancelling = false);
+      _showSnack('No active upload to cancel', isError: true);
     }
   }
 
@@ -260,8 +279,7 @@ class _SendScreenState extends State<SendScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              TransferService.formatBytesStatic(transfer.totalBytes) +
-                  ' transferred',
+              '${TransferService.formatBytesStatic(transfer.totalBytes)} transferred',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall!.copyWith(color: AppTheme.success),
@@ -309,239 +327,247 @@ class _SendScreenState extends State<SendScreen> {
       behavior: HitTestBehavior.opaque,
       child: SingleChildScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Text('Send Files', style: Theme.of(context).textTheme.displayMedium),
-          const SizedBox(height: 4),
-          Text(
-            'Enter the recipient\'s code and select files',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 32),
-
-          // ─── Recipient code input ─────────────────────────────────────────
-          Text('Recipient Code', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 10),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _codeController,
-                    textCapitalization: TextCapitalization.characters,
-                    maxLength: AppConstants.shortCodeLength,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 4,
-                      color: AppTheme.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'A4X9K2',
-                      counterText: '',
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.tag_rounded,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
-                    onChanged: (_) {
-                      if (_recipientError != null) {
-                        setState(() {
-                          _recipientError = null;
-                          _recipient = null;
-                        });
-                      }
-                    },
-                    onSubmitted: (_) => _lookupRecipient(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _lookingUp ? null : _lookupRecipient,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    backgroundColor: AppTheme.accentLight,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _lookingUp
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Find', style: TextStyle(fontSize: 16)),
-                ),
-              ],
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            Text(
+              'Send Files',
+              style: Theme.of(context).textTheme.displayMedium,
             ),
-          ),
-
-          if (_recipientError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 4),
-              child: Text(
-                _recipientError!,
-                style: const TextStyle(color: AppTheme.error, fontSize: 13),
-              ),
+            const SizedBox(height: 4),
+            Text(
+              'Enter the recipient\'s code and select files',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
+            const SizedBox(height: 32),
 
-          // Recipient found indicator
-          if (_recipient != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.successGlow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.success.withAlpha(100)),
-              ),
+            // ─── Recipient code input ─────────────────────────────────────────
+            Text(
+              'Recipient Code',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 10),
+            IntrinsicHeight(
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: AppTheme.success,
-                    size: 20,
+                  Expanded(
+                    child: TextField(
+                      controller: _codeController,
+                      textCapitalization: TextCapitalization.characters,
+                      maxLength: AppConstants.shortCodeLength,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 4,
+                        color: AppTheme.textPrimary,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'A4X9K2',
+                        counterText: '',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.tag_rounded,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                      onChanged: (_) {
+                        if (_recipientError != null) {
+                          setState(() {
+                            _recipientError = null;
+                            _recipient = null;
+                          });
+                        }
+                      },
+                      onSubmitted: (_) => _lookupRecipient(),
+                    ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Recipient found: ${_recipient!.shortCode}',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium!.copyWith(color: AppTheme.success),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: _lookingUp ? null : _lookupRecipient,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      backgroundColor: AppTheme.accentLight,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _lookingUp
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Find', style: TextStyle(fontSize: 16)),
                   ),
                 ],
               ),
             ),
-          ],
 
-          const SizedBox(height: 28),
-
-          // ─── File picker ──────────────────────────────────────────────────
-          Text('Select Files', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 10),
-          if (_selectedFiles.isEmpty)
-            GestureDetector(
-              onTap: _pickFiles,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                decoration: BoxDecoration(
-                  color: AppTheme.bgCardElevated,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppTheme.border,
-                    style: BorderStyle.solid,
-                  ),
+            if (_recipientError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 4),
+                child: Text(
+                  _recipientError!,
+                  style: const TextStyle(color: AppTheme.error, fontSize: 13),
                 ),
-                child: Column(
+              ),
+
+            // Recipient found indicator
+            if (_recipient != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.successGlow,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.success.withAlpha(100)),
+                ),
+                child: Row(
                   children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentGlow,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        color: AppTheme.accent,
-                        size: 30,
-                      ),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppTheme.success,
+                      size: 20,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(width: 10),
                     Text(
-                      'Tap to select files',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Images, videos, documents, any format • Max 500 MB',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      'Recipient found: ${_recipient!.shortCode}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium!.copyWith(color: AppTheme.success),
                     ),
                   ],
                 ),
               ),
-            )
-          else ...[
-            // Show selected files
-            ..._selectedFiles.map(
-              (f) => _FileChip(
-                file: f,
-                onRemove: () => setState(() => _selectedFiles.remove(f)),
-              ),
-            ),
+            ],
+
+            const SizedBox(height: 28),
+
+            // ─── File picker ──────────────────────────────────────────────────
+            Text('Select Files', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: _pickFiles,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Add More Files'),
-            ),
-          ],
-
-          const SizedBox(height: 32),
-
-          // ─── Progress bar (shown during send) ─────────────────────────────
-          if (_sending) ...[
-            _ProgressSection(
-              currentFile: _currentFileIndex,
-              totalFiles: _totalFiles,
-              bytesTransferred: _bytesTransferred,
-              totalBytes: _totalBytes,
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ─── Send button ──────────────────────────────────────────────────
-          if (!_sending)
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed:
-                    (_recipient != null &&
-                        _selectedFiles.isNotEmpty &&
-                        !_sending)
-                    ? _send
-                    : null,
-                icon: const Icon(Icons.upload_rounded),
-                label: Text(
-                  _selectedFiles.isEmpty
-                      ? 'Select files to send'
-                      : _recipient == null
-                      ? 'Find a recipient first'
-                      : 'Send ${_selectedFiles.length} file(s)',
+            if (_selectedFiles.isEmpty)
+              GestureDetector(
+                onTap: _pickFiles,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  decoration: BoxDecoration(
+                    color: AppTheme.bgCardElevated,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppTheme.border,
+                      style: BorderStyle.solid,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentGlow,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.add_rounded,
+                          color: AppTheme.accent,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Tap to select files',
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Images, videos, documents, any format • Max 500 MB',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      (_recipient != null && _selectedFiles.isNotEmpty)
-                      ? AppTheme.accent
-                      : AppTheme.bgCardElevated,
-                  foregroundColor:
-                      (_recipient != null && _selectedFiles.isNotEmpty)
-                      ? Colors.white
-                      : AppTheme.textMuted,
+              )
+            else ...[
+              // Show selected files
+              ..._selectedFiles.map(
+                (f) => _FileChip(
+                  file: f,
+                  onRemove: () => setState(() => _selectedFiles.remove(f)),
                 ),
               ),
-            ),
+              const SizedBox(height: 10),
+              TextButton.icon(
+                onPressed: _pickFiles,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add More Files'),
+              ),
+            ],
 
-          const SizedBox(height: 32),
-        ],
+            const SizedBox(height: 32),
+
+            // ─── Progress bar (shown during send) ─────────────────────────────
+            if (_sending) ...[
+              _ProgressSection(
+                currentFile: _currentFileIndex,
+                totalFiles: _totalFiles,
+                bytesTransferred: _bytesTransferred,
+                totalBytes: _totalBytes,
+                cancelling: _cancelling,
+                onCancel: _cancelUpload,
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // ─── Send button ──────────────────────────────────────────────────
+            if (!_sending)
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed:
+                      (_recipient != null &&
+                          _selectedFiles.isNotEmpty &&
+                          !_sending)
+                      ? _send
+                      : null,
+                  icon: const Icon(Icons.upload_rounded),
+                  label: Text(
+                    _selectedFiles.isEmpty
+                        ? 'Select files to send'
+                        : _recipient == null
+                        ? 'Find a recipient first'
+                        : 'Send ${_selectedFiles.length} file(s)',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        (_recipient != null && _selectedFiles.isNotEmpty)
+                        ? AppTheme.accent
+                        : AppTheme.bgCardElevated,
+                    foregroundColor:
+                        (_recipient != null && _selectedFiles.isNotEmpty)
+                        ? Colors.white
+                        : AppTheme.textMuted,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 32),
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -637,12 +663,16 @@ class _ProgressSection extends StatelessWidget {
   final int totalFiles;
   final int bytesTransferred;
   final int totalBytes;
+  final bool cancelling;
+  final VoidCallback onCancel;
 
   const _ProgressSection({
     required this.currentFile,
     required this.totalFiles,
     required this.bytesTransferred,
     required this.totalBytes,
+    required this.cancelling,
+    required this.onCancel,
   });
 
   @override
@@ -672,7 +702,9 @@ class _ProgressSection extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                'Uploading file $currentFile of $totalFiles',
+                cancelling
+                    ? 'Cancelling upload...'
+                    : 'Uploading file $currentFile of $totalFiles',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const Spacer(),
@@ -708,6 +740,23 @@ class _ProgressSection extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: cancelling ? null : onCancel,
+              icon: Icon(
+                cancelling ? Icons.hourglass_top_rounded : Icons.close_rounded,
+                size: 18,
+              ),
+              label: Text(cancelling ? 'Cancelling...' : 'Cancel Transfer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.error,
+                side: const BorderSide(color: AppTheme.error),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ),
         ],
       ),
