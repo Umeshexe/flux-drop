@@ -32,7 +32,7 @@ class AboutScreen extends StatelessWidget {
           _buildHeading(context, 'Overview'),
           _buildText(
             context,
-            'Built for the NeoSapien Developer Intern Assessment. A real-time cross-device file sharing app using Flutter and Firebase, featuring the NeoPOP design system. The goal was stability, robustness, and honestly defending architectural choices.',
+            'Built for the NeoSapien Developer Intern Assessment. FluxDrop is a real-time cross-device file sharing app using Flutter and Firebase. The focus for this build was to make the core mobile transfer flow real, stable, and reviewable without pretending unfinished parts were production-ready.',
           ),
           SizedBox(height: 32),
 
@@ -42,7 +42,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.account_tree_rounded,
             title: 'Transport Choice & Rationale',
             text:
-                'I opted for a BaaS approach over WebRTC. True WebRTC across symmetric NATs requires deploying dedicated TURN servers, presenting high timeline risk. Firebase guarantees internet-grade NAT traversal out of the box, letting me focus entirely on complex mobile edge-cases.',
+                'I chose a Firebase-based relay path instead of making WebRTC the primary transport. That kept the project lower-risk for the assessment timeline and let me focus on mobile behavior, transfer state, and edge-case handling rather than building and hosting my own relay stack.',
           ),
           SizedBox(height: 12),
           _buildCard(
@@ -50,7 +50,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.cloud_sync_rounded,
             title: 'Firestore State Machine',
             text:
-                'Instead of building custom WebSockets, Firestore snapshot listeners drive the UI. This creates a pure state machine (uploading, ready, completed) that perfectly satisfies the "arrives within a couple of seconds" rubric with minimal overhead.',
+                'Firestore snapshot listeners drive the transfer UI instead of a custom WebSocket backend. Transfer documents move through clear states like uploading, uploaded, downloading, completed, and failed so both devices stay in sync in near real time.',
           ),
           SizedBox(height: 12),
           _buildCard(
@@ -58,7 +58,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.storage_rounded,
             title: 'Firebase Storage (Relay)',
             text:
-                'Chosen to handle the heavy lifting of large payloads. It provides chunked, robust upload streams out-of-the-box, ensuring 500MB+ large files safely transfer over flaky networks without manual byte-chunk management.',
+                'Firebase Storage is the primary internet relay for file bytes. It gave me a practical way to support larger files and resume-friendly uploads without inventing my own byte-chunk transport layer during the assessment.',
           ),
           SizedBox(height: 12),
           _buildCard(
@@ -66,7 +66,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.notifications_active_rounded,
             title: 'Cloud Functions & FCM',
             text:
-                'To fulfill the "closed-app notification" requirement on Android, a custom Node.js Cloud Function acts as a side-path. It triggers on Firestore write events and securely dispatches FCM pushes to wake up the receiver.',
+                'For Android closed-app awareness, a small Node.js Cloud Function watches Firestore state changes and sends FCM notifications when a transfer becomes ready. This covers the receiver notification path without adding a separate custom backend.',
           ),
           SizedBox(height: 32),
 
@@ -76,7 +76,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.wifi_tethering_rounded,
             title: 'Option #5: Nearby LAN Fast-Path',
             text:
-                'If both devices detect they are on the same /24 Wi-Fi subnet, they bypass Firebase entirely. The sender binds a raw TCP socket, and the receiver connects instantly to stream files at local network speeds.',
+                'The codebase also includes a nearby LAN fast-path. If both devices detect they are on the same `/24` Wi-Fi subnet, the sender can expose a local TCP path and the receiver can connect directly. This is implemented in the repo, but the Firebase relay path is still the primary demo-safe path I would rely on.',
           ),
           SizedBox(height: 12),
           _buildCard(
@@ -84,38 +84,38 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.code_rounded,
             title: 'Option #2: Native MediaStore & Photos',
             text:
-                'Implemented a custom MethodChannel instead of relying on generic pub.dev packages. On Android, it interfaces natively with MediaStore for Scoped Storage compliance. On iOS, it uses PHPhotoLibrary to write directly to the Camera Roll.',
+                'I implemented native platform-channel work instead of relying only on generic pub.dev wrappers. On Android, media saving uses `MediaStore` for scoped-storage compliance. On iOS, media saving uses `PHPhotoLibrary` to write to Photos.',
           ),
           SizedBox(height: 32),
 
           _buildHeading(context, 'Robustness & Edge Cases'),
           _buildBullet(
             context,
-            'Streaming Large Files: Files up to 500 MB stream directly to disk to prevent Out-Of-Memory (OOM) crashes.',
+            'Streaming Large Files: Files are capped at 500 MB and written to disk instead of being held fully in memory.',
           ),
           _buildBullet(
             context,
-            'SHA-256 Integrity: Hashes are computed dynamically on upload and strictly verified on download across all paths.',
+            'SHA-256 Integrity: Hashes are computed on upload and verified on download before the app treats a file as valid.',
           ),
           _buildBullet(
             context,
-            'Anonymous Collision Protection: Handled securely via Firebase transaction logic during on-device provisioning.',
+            'Anonymous Collision Protection: Short-code creation retries until a unique code is found.',
           ),
           _buildBullet(
             context,
-            'App Re-entry Cleanup: Implemented a startup scanner (`recoverStaleTransfers`) to gracefully clean up and revert orphaned transfers left suspended by OS process death.',
+            'App Re-entry Cleanup: A startup recovery pass attempts to clean up or restore stale transfer documents left behind by interrupted sessions.',
           ),
           _buildBullet(
             context,
-            'Pre-flight Checks: Validates local device free-space via native paths and alerts users before starting 50MB+ transfers on metered connections.',
+            'Pre-flight Checks: The app checks local free space through native paths and warns before large transfers on likely metered connections.',
           ),
           _buildBullet(
             context,
-            'Cloud Function Push: A Firebase Cloud Function monitors the state-machine side-path to securely trigger offline push notifications via FCM.',
+            'Cloud Function Push: A Firebase Cloud Function watches transfer state and sends FCM notifications for the Android closed-app path.',
           ),
           _buildBullet(
             context,
-            'Transfer Control: Implemented graceful mid-flight cancellation and an explicit Accept/Decline privacy gate for all incoming requests.',
+            'Transfer Control: Upload/download cancellation is supported, and first-time incoming transfers use an explicit Accept / Decline gate.',
           ),
           SizedBox(height: 32),
 
@@ -125,7 +125,7 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.warning_amber_rounded,
             title: 'What was skipped',
             text:
-                '1. True Deep Backgrounding: OEM battery killers cause unpredictable behavior for Android Foreground Services. Focused on clean state recovery rather than flaky backgrounding.\n\n2. iOS Push Constraints: FCM was integrated perfectly, but true offline remote pushes on a physical iPhone require a paid Apple Developer certificate.\n\n3. Identity Persistence: Short-codes persist until App Data is cleared. On Android, reinstalling generates a new code. On iOS, Firebase stores the UID in the secure Native Keychain, meaning reinstalls natively restore the exact same code. No manual account recovery flow was built, strictly adhering to the prompt\'s "anonymous onboarding" requirement.\n\n4. LAN Encryption: The local TCP fast-path is unencrypted, assuming intrinsic safety on WPA2 subnets.',
+                '1. True Deep Backgrounding: Full background transfer survival with Android foreground services / iOS background sessions is not implemented.\n\n2. iOS Push Constraints: iOS closed-app push behavior depends on APNs-ready signing and entitlements, which were limited in my local setup.\n\n3. Identity Persistence: The anonymous identity persists while app data remains intact, but I did not build a manual recovery flow after app data clear.\n\n4. LAN Encryption: The local TCP fast-path is not wrapped in its own extra application-layer encryption.',
             isWarning: true,
           ),
           SizedBox(height: 32),
@@ -134,8 +134,7 @@ class AboutScreen extends StatelessWidget {
           FluxSurface(
             color: AppTheme.bgCardElevated,
             borderColor: AppTheme.border,
-            padding:
-                EdgeInsets.zero, // Padding shifted to InkWells for rippe bounds
+            padding: EdgeInsets.zero,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -210,7 +209,7 @@ class AboutScreen extends StatelessWidget {
                         : LaunchMode.externalApplication,
                   );
                 } catch (e) {
-                  debugPrint('Could not launch \$url');
+                  debugPrint('Could not launch $url');
                 }
               }
             : null,

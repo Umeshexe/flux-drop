@@ -74,13 +74,13 @@ class FluxButton extends StatelessWidget {
     );
 
     final elevatedStyle = Theme.of(context).elevatedButtonTheme.style?.copyWith(
-      padding: const MaterialStatePropertyAll(EdgeInsets.zero),
-      minimumSize: const MaterialStatePropertyAll(Size.zero),
+      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      minimumSize: const WidgetStatePropertyAll(Size.zero),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
     final outlinedStyle = Theme.of(context).outlinedButtonTheme.style?.copyWith(
-      padding: const MaterialStatePropertyAll(EdgeInsets.zero),
-      minimumSize: const MaterialStatePropertyAll(Size.zero),
+      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      minimumSize: const WidgetStatePropertyAll(Size.zero),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
 
