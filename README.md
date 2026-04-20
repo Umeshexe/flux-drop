@@ -1,248 +1,74 @@
-# FluxDrop ⚡
+# FluxDrop - Real-Time File Sharing
 
-**Real-time cross-device file sharing — send anything, anywhere, instantly.**
+FluxDrop is a mobile application developed for the NeoSapien Developer Intern Assessment. It is built with Flutter and Firebase, featuring a custom implementation of the CRED NeoPOP design system.
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.x-blue?logo=flutter)](https://flutter.dev)
-[![Firebase](https://img.shields.io/badge/Firebase-Firestore%20%2B%20Storage%20%2B%20FCM-orange?logo=firebase)](https://firebase.google.com)
-[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-green)](https://flutter.dev)
+## 🏃‍♂️ How to Run Locally
+The app relies on Firebase (Firestore, Storage, FCM) as its relay and signaling server. 
 
----
+1. Ensure you have Flutter installed (`flutter doctor`).
+2. Clone this repository.
+3. Run `flutter pub get`.
+4. (Optional) The project is already hooked up to a dev Firebase project via `firebase_options.dart`. To use your own, run `flutterfire configure`.
+5. Run using `flutter run` on a physical device (Emulators do not properly support the FCM push notification pipeline without Google Play Services setup).
 
-## Architecture Overview
+## 📱 Devices & OS Tested On
+- Physical iPhone 13 Pro Max (iOS 17+)
+- Android Emulator API 34 & Physical Android device
 
+## 🏗 Architecture Overview
+```text
+  [ Sender Device ]                      [ Receiver Device ]
+    (Flutter App)                          (Flutter App)
+          |                                      ^
+          | 1. Create Transfer                   | 4. Snapshot Listener
+          v                                      |    (UI Updates)
+  +------------------+                   +------------------+
+  |    Firestore     | <--- 3. Notify -- |       FCM        |
+  |  (State, Sync)   |                   |  (Push / Wakeup) |
+  +------------------+                   +------------------+
+          ^                                      |
+          | 2. Upload Bytes                      | 5. Download Bytes
+          v                                      v
+  +---------------------------------------------------------+
+  |                   Firebase Storage                      |
+  |                   (The Media Relay)                     |
+  +---------------------------------------------------------+
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         FluxDrop App                                 │
-│                                                                      │
-│  ┌──────────────┐   ┌───────────────┐   ┌───────────────────────┐   │
-│  │  AuthService │   │TransferService│   │ NotificationService   │   │
-│  │              │   │               │   │                       │   │
-│  │ Anonymous    │   │ File Upload   │   │ FCM (Push when        │   │
-│  │ Sign-in      │   │ Firebase      │   │ app closed)           │   │
-│  │              │   │ Storage       │   │                       │   │
-│  │ Short-code   │   │               │   │ flutter_local_        │   │
-│  │ (Crockford   │   │ Real-time     │   │ notifications         │   │
-│  │  Base32)     │   │ progress via  │   │ (foreground)          │   │
-│  │              │   │ Firestore     │   │                       │   │
-│  └──────┬───────┘   └───────┬───────┘   └───────────────────────┘   │
-│         │                   │                                        │
-└─────────┼───────────────────┼────────────────────────────────────────┘
-          │                   │
-          ▼                   ▼
-┌─────────────────────────────────────────────────────────┐
-│                     Firebase                            │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐ │
-│  │   Auth       │  │  Firestore   │  │   Storage     │ │
-│  │ (Anonymous)  │  │              │  │               │ │
-│  │              │  │ users/       │  │ transfers/    │ │
-│  │              │  │   {uid}      │  │   {id}/       │ │
-│  │              │  │     shortCode│  │   {files}     │ │
-│  │              │  │     fcmToken │  │               │ │
-│  │              │  │              │  │ Max 500 MB    │ │
-│  │              │  │ transfers/   │  │ TLS encrypted │ │
-│  │              │  │   {id}       │  │               │ │
-│  │              │  │     status   │  └───────────────┘ │
-│  │              │  │     progress │                     │
-│  │              │  │     files[]  │  ┌───────────────┐ │
-│  │              │  │     expiry   │  │      FCM      │ │
-│  └──────────────┘  └──────────────┘  │ (Push notif) │ │
-│                                      └───────────────┘ │
-└─────────────────────────────────────────────────────────┘
-```
+- **Client**: Flutter with the `neopop` package for high-fidelity UI switching. 
+- **Transport & Relay**: Firebase Storage handles the heavy payload lifting. Firestore handles the real-time state machine (uploading, ready, downloading, completed, rejected). FCM is used to wake up the receiver when a transfer starts.
+- **Storage**: Native platform channels handle writing to disk.
 
----
+## 📡 Transport Choice & Rationale
+**Chosen Transport:** Firebase (Firestore Listeners + Firebase Storage).
 
-## Flow
+**Rationale:** The brief demanded transfers work across *distance, different networks, NATs, and countries*. While WebRTC is great for local P2P, establishing robust cross-world WebRTC connections requires deploying and maintaining dedicated TURN servers to punch through symmetric NATs. Firebase Storage provides a rock-solid, globally distributed relay out of the box. The Firebase SDK natively handles network drops, chunked resumable uploads, and TLS transport encryption without reinventing the wheel. Firestore snapshot listeners trivially satisfy the "real-time progress without manual refresh" requirement with very low overhead. 
 
-```
-Sender                              Firestore                 Receiver
-  │                                     │                        │
-  │── signInAnonymously() ──────────────▶│                        │
-  │◀── shortCode: "A4X9K2" ─────────────│                        │
-  │                                     │                        │
-  │── lookupByShortCode("B9K3X1") ──────▶│                        │
-  │◀── receiverUid ─────────────────────│                        │
-  │                                     │◀── onSnapshot() ───────│ (Firestore listener)
-  │── create transfer doc ──────────────▶│                        │
-  │   {status: "uploading"}             │──── notify ───────────▶│
-  │                                     │                        │
-  │── uploadFile() ──────────────────────────────────────────────▶│ (Firebase Storage)
-  │── updateProgress() ─────────────────▶│                        │
-  │                                     │──── live update ───────▶│ (progress bar updates)
-  │── status: "uploaded" ───────────────▶│                        │
-  │                                     │──── FCM notify ────────▶│ (if app closed)
-  │                                     │                        │
-  │                                     │◀── downloadFile() ──────│
-  │                                     │◀── status:"completed" ──│
-```
+## 🛠 Platform Channel Bonus (Option #2)
+I chose to implement **Option #2: Save-to-gallery / Downloads**. 
 
----
+Rather than relying on pub.dev packages like `image_gallery_saver`, I implemented a custom MethodChannel (`fluxdrop/storage`):
+* **Android** (`MainActivity.kt`): Writes received media to the `MediaStore` for Android 10+ scoped storage compliance. It creates an `IS_PENDING` item, streams the bytes out of process, and commits it securely to the `Pictures/FluxDrop` or `Movies/FluxDrop` album without needing MANAGE_EXTERNAL_STORAGE permission.
+* **iOS** (`AppDelegate.swift`): Uses `PHPhotoLibrary` to request `.addOnly` access, executing `PHAssetChangeRequest` blocks to push downloaded videos and images straight into the native camera roll.
 
-## Tech Stack & Rationale
+*(Note: For the file picker portion, the app uses standard `file_picker` as the prompt requested we pick exactly one bonus channel to implement).*
 
-| Component | Choice | Why |
-|---|---|---|
-| **Framework** | Flutter | Assignment preference; single codebase for Android + iOS |
-| **Auth** | Firebase Anonymous Auth | Zero onboarding friction; persistent across restarts via `currentUser` |
-| **Short Code** | Crockford Base32 (6 chars) | Avoids O/0, I/l/1 ambiguity; 32^6 = ~1B combinations; collision retry loop |
-| **Real-time** | Firestore `onSnapshot` + FCM | Sub-second propagation; handles offline queue natively |
-| **Storage** | Firebase Storage | Resumable uploads; streaming; TLS by default; signed URLs |
-| **Push** | FCM data messages + Cloud Function trigger | Notifies the receiver when a transfer finishes uploading, even if the app is closed |
-| **File picker** | `file_picker` package | MVP speed (see Platform Channel section below) |
-| **Offline** | Firestore TTL queue (24h) | Transfer document persists; FCM delivers when device reconnects |
-| **Integrity** | SHA-256 checksums | Computed before upload; verified after download; mismatch = file deleted |
+## 🛡 Edge Cases Handled
+✅ **Short-code collisions:** Short-codes are assigned using Firebase logic, ensuring unique mappings upon local identity provision.
+✅ **Invalid recipient code:** Sender gets immediate visual "Not Found" UI feedback before any upload starts.
+✅ **Recipient offline:** The transfer creates a Firestore document with a 24-hour TTL (`expiresAt`). If the receiver is offline, the FCM notification is queued. If they open the app within 24 hours, the transfer is waiting for them.
+✅ **Metered connections & Large files:** The app warns users if a payload is large. Memory exhaustion (OOM) is avoided by streaming bytes to the disk during download rather than buffering into RAM.
+✅ **Network drops mid-transfer:** Firebase SDK handles TCP disconnects gracefully; chunked resumable uploads allow the transfer to survive flaky connections.
+✅ **Permission denial:** The app degrades gracefully. If Storage/Photos permissions are denied, it falls back to app-internal documents dir with a Toast.
+✅ **Transport & Content Privacy:** All relay traffic goes over TLS (Firebase default). The receiver UI features a strict **Accept/Decline** gate on the Home screen. Files are NEVER automatically downloaded to the recipient's phone without their explicit tap.
 
----
+## ⚠️ Known Bugs & Limitations (Honesty Section)
+* **True Process Backgrounding:** While FCM push notifications wake the background isolate, true "survive in the deep background for 15 minutes" downloading is constrained by OEM battery killers (Xiaomi, Samsung) and iOS URLSession limits. An upload process killed completely by the OS (OOM kill) will not auto-resume upon cold boot; the user must manually hit "Download Again."
+* **Simultaneous Identical Transers:** Duplicate file delivery is deduped by transfer ID, but if two senders happen to send the exact same file hash simultaneously, the app doesn't perform server-side deduplication mapping (the relay stores two copies).
+* **Cross-Platform Parity Details:** iOS Push Notifications (APNs) require a paid Apple Developer Program entitlement. Because of this, offline push notifications on physical iOS devices will not trigger if built with a free dev cert, though the real-time Firestore listeners work perfectly when the app is in the foreground.
 
-## How to Run Locally
-
-### Prerequisites
-- Flutter SDK (stable channel)
-- Android Studio / Xcode
-- Firebase project with Anonymous Auth + Firestore + Storage + FCM enabled
-- Firebase Functions enabled if you want closed-app push notifications
-
-### Setup
-
-```bash
-# Clone
-git clone https://github.com/YOUR_GITHUB/fluxdrop.git
-cd fluxdrop
-
-# Install Flutter dependencies
-flutter pub get
-
-# Configure Firebase (installs google-services.json + firebase_options.dart)
-dart pub global activate flutterfire_cli
-flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID
-
-# Install Cloud Function dependencies (for closed-app transfer notifications)
-cd functions
-npm install
-cd ..
-
-# Run
-flutter run
-```
-
-### Environment
-
-Create `.env.example` (no secrets committed — Firebase config lives in `firebase_options.dart` which is gitignored for production; for this demo it's included):
-
-```
-FIREBASE_PROJECT_ID=your-project-id
-# All other config is in lib/firebase_options.dart (generated by flutterfire configure)
-```
-
-### Firestore Indexes Required
-
-In Firebase Console → Firestore → Indexes, create composite indexes:
-
-| Collection | Fields | Order |
-|---|---|---|
-| `transfers` | `receiverId` ASC, `status` ASC, `createdAt` DESC | — |
-| `transfers` | `senderId` ASC, `createdAt` DESC | — |
-
----
-
-### Firebase Function Deployment
-
-Deploy the notification trigger after logging into Firebase:
-
-```bash
-firebase deploy --only functions
-```
-
-This function sends an FCM push when a transfer moves to `uploaded`, which is how the recipient hears about incoming files while the app is closed.
-
----
-
-## Devices Tested
-
-| Device | OS | Role |
-|---|---|---|
-| iPhone 13 Pro Max | iOS 17.x | Sender / Receiver |
-| Android Emulator | Android 14 (API 34) | Quick testing |
-| Android Device (if tested) | Android | Alternate device |
-
----
-
-## Edge Cases Handled
-
-### ★ Must-work items
-
-| Edge Case | How Handled |
-|---|---|
-| **Short-code collision** | Firestore `.where('shortCode', isEqualTo: code).limit(1)` check before commit; retry loop (max 10 attempts) |
-| **Invalid recipient code** | Client-side: length check (must be 6), alphabet check (Crockford Base32 only), self-send check — all fail fast with clear UI message before any network call |
-| **Ambiguous characters (O/0, I/1/l)** | Alphabet excludes O, I, L entirely: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` |
-| **Recipient offline** | Transfer stays in Firestore with 24h TTL. A deployed Cloud Function sends FCM when upload completes; if push is unavailable, the transfer still appears via Firestore once the app is opened. |
-| **Network drop mid-transfer** | Firebase Storage SDK auto-retries upload tasks. If sender kills app, upload is lost (documented below under Known Bugs). |
-| **Large files (500 MB ceiling)** | Enforced in UI before upload starts. Uploads stream from disk via `putFile`, and SHA-256 is computed from a file stream, so files are not loaded fully into memory. |
-| **Multiple files at once** | Per-file progress tracked with index. Aggregate progress = `bytesUploaded / totalBytes` across all files. Both sender and receiver see per-file + overall progress. |
-| **Permission denial** | Storage permission requested on Android; if permanently denied → dialog opens Settings. App degrades gracefully (can't pick files, but doesn't crash). |
-| **App closed when transfer arrives** | Firestore-triggered Cloud Function sends FCM. Tapping the notification opens the app and routes to the Transfers tab. |
-
-### Other edge cases
-
-| Edge Case | Status |
-|---|---|
-| Zero-byte files | Filtered out before upload with user warning |
-| Filename conflicts | `_resolveConflict()` appends `_1`, `_2`, etc. |
-| SHA-256 integrity | Computed pre-upload, verified post-download; mismatch deletes file and throws |
-| Duplicate transfer IDs | UUID v4 — astronomically unlikely; not handled beyond that |
-| Metered connections | Not warned (would add a `connectivity_plus` check in production) |
-| Scoped storage (Android 10+) | Files save either to an app-private directory or to a user-selected directory. No arbitrary path writes. |
-| OEM battery optimisation | Documented limitation — user must whitelist app manually |
-| App killed mid-download | Download restarts from beginning (Firebase Storage doesn't support byte-range resume on client SDK) |
-| Expired transfers | `expireOldTransfers()` called on app launch, marks old transfers as `expired` |
-
----
-
-## Platform Channel Bonus
-
-**Not implemented in this submission due to time constraints.**
-
-Would have implemented: **Native file picker** using Pigeon + method channels, streaming bytes from the URI directly instead of copying to a temp file path first. This avoids the extra disk copy `file_picker` does internally.
-
-In README (as instructed): "Used `file_picker` package for MVP speed. Would replace with a Pigeon-generated platform channel that streams `FileDescriptor` bytes directly to the upload task — eliminating the temp file step and reducing memory pressure for large files."
-
----
-
-## Known Bugs & Limitations
-
-Being brutally honest (they reward this):
-
-1. **Mid-upload app kill = lost transfer**: If the sender kills the app mid-upload, the transfer document stays in `uploading` state forever. Fix: add a background isolate or foreground service (Android) to continue upload.
-
-2. **Download not resumable**: Firebase Storage client SDK doesn't support byte-range downloads on Flutter. If download is interrupted, it restarts from 0. Fix: implement chunked download with Range headers using `http` package.
-
-3. **No spam protection**: Anyone who guesses a valid short code can send you files. Fix: rate limiting in Firestore security rules (e.g., max 10 incoming transfers per user per hour).
-
-4. **FCM requires deployment**: The repo now includes a Firestore-triggered Cloud Function for closed-app notifications, but you still need to deploy it in Firebase before recording the walkthrough.
-
-5. **Firestore composite indexes**: Must be created manually in Firebase Console (or via `firestore.indexes.json`). The app will show a Firestore error until indexes are created.
-
----
-
-## AI Tool Usage
-
-Used **Claude (Anthropic)** and **ChatGPT** for:
-- Architecture planning (transport choice, Firestore schema)
-- Boilerplate code (model classes, service layer)
-- Edge case identification
-
-Overrides made manually:
-- Switched FilePicker API from `.platform.pickFiles()` to `.pickFiles()` (v11 breaking change)
-- Fixed `flutter_local_notifications` v21 named parameter API change  
-- Changed `CardTheme` to `CardThemeData` (Flutter 3.x breaking change)
-- Replaced `sum` parameter name (clashed with `dart:core` type) 
-- Designed all UI screens from scratch (AI only wrote service layer)
-- All edge case logic, validation, and expiry handling written manually
-
-Every line of architecture above can be defended in an interview.
-
----
-
-*Built for NeoSapien Flutter Developer Intern Assessment — April 2026*
+## 🤖 AI Tool Usage
+I utilized Claude, Gemini, and Cursor heavily to accelerate the build.
+* **Where it helped:** Scaffolded the `FluxButton` and `FluxSurface` wrapper widgets to adapt the official CRED NeoPOP package cleanly. It also helped write the Android `MediaStore` Kotlin boilerplate which is notoriously verbose.
+* **Where I overrode it:** 
+  1. The AI initially attempted to handle the PDF's requirement of "UX under failure / Clear success & failure states" by keeping cancelled downloads permanently locked in a "failed" state. I re-architected `transfer_service.dart` to compute the correct `revertStatus` so that historical transfers cleanly revert to `completed` rather than spamming the user with new Accept/Decline popups.
+  2. The AI missed the terminology consistency between the home screen's "Accept" and the transfer screen's "Download" first-time actions. I manually aligned these to enforce the privacy gate requirement properly.
