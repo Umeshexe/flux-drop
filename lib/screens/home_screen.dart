@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../models/user_model.dart';
 import '../services/notification_service.dart';
 import '../services/transfer_service.dart';
 import '../widgets/flux_ui.dart';
+import 'about_screen.dart';
 import 'send_screen.dart';
 import 'settings_screen.dart';
 import 'transfers_screen.dart';
@@ -61,21 +63,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // Expire old transfers on launch
     TransferService().expireOldTransfers();
 
+    Future<void> evaluateNetwork(List<ConnectivityResult> results) async {
+      final hasInterface = results.any((r) => r != ConnectivityResult.none);
+      if (!hasInterface) {
+        if (mounted && _isOnline) setState(() => _isOnline = false);
+        return;
+      }
+      try {
+        final lookup = await InternetAddress.lookup('google.com')
+            .timeout(Duration(seconds: 3));
+        final online = lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty;
+        if (mounted && _isOnline != online) setState(() => _isOnline = online);
+      } catch (_) {
+        if (mounted && _isOnline) setState(() => _isOnline = false);
+      }
+    }
+
     // Live connectivity monitoring
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
-      final online = results.any((r) => r != ConnectivityResult.none);
-      if (mounted && online != _isOnline) {
-        setState(() => _isOnline = online);
-      }
-    });
+    _connectivitySub = Connectivity().onConnectivityChanged.listen(evaluateNetwork);
     // Seed initial state
-    Connectivity().checkConnectivity().then((results) {
-      if (mounted) {
-        setState(
-          () => _isOnline = results.any((r) => r != ConnectivityResult.none),
-        );
-      }
-    });
+    Connectivity().checkConnectivity().then(evaluateNetwork);
 
     NotificationService().openTransfersRequests.listen((_) {
       if (mounted) {
@@ -178,11 +185,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   _ThemeOptionCard(
                     mode: FluxThemeMode.classic,
                     currentMode: currentMode,
-                    title: 'Current',
-                    subtitle: 'Rounded, softer, neon-glow focused.',
+                    title: 'Classic',
+                    subtitle: 'Rounded corners, soft glows, gradient accents.',
                     previewGradient: LinearGradient(
                       colors: [Color(0xFF6C63FF), Color(0xFF9D55FF)],
                     ),
+                    previewIcon: Icons.lens_blur_rounded,
                     onTap: () async {
                       await AppTheme.setThemeMode(FluxThemeMode.classic);
                       if (ctx.mounted) Navigator.pop(ctx);
@@ -193,10 +201,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     mode: FluxThemeMode.neoPop,
                     currentMode: currentMode,
                     title: 'NeoPOP',
-                    subtitle: 'Sharper edges, harder shadows, louder contrast.',
+                    subtitle: 'Sharp  edges, hard shadows, high contrast.',
                     previewGradient: LinearGradient(
-                      colors: [Color(0xFFFFF176), Color(0xFFFFC107)],
+                      colors: [Color(0xFF222222), Color(0xFF111111)],
                     ),
+                    previewIcon: Icons.category_rounded,
                     onTap: () async {
                       await AppTheme.setThemeMode(FluxThemeMode.neoPop);
                       if (ctx.mounted) Navigator.pop(ctx);
@@ -670,7 +679,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               onTap: () {
                 Navigator.pop(context);
-                // Can show an about dialog here
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => AboutScreen()),
+                );
               },
             ),
             Spacer(),
@@ -949,28 +961,38 @@ class _IncomingReadyCard extends StatelessWidget {
                 onPressed: onDecline,
                 tone: FluxButtonTone.danger,
                 outlined: true,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 10,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: const [
                     Icon(Icons.close_rounded, size: 18),
                     SizedBox(width: 6),
-                    Flexible(child: Text('Decline', overflow: TextOverflow.fade)),
+                    Flexible(
+                      child: Text('Decline', overflow: TextOverflow.fade),
+                    ),
                   ],
                 ),
               );
               final acceptButton = FluxButton(
                 onPressed: onAccept,
                 tone: FluxButtonTone.success,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 10,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: const [
                     Icon(Icons.check_circle_rounded, size: 18),
                     SizedBox(width: 6),
-                    Flexible(child: Text('Accept', overflow: TextOverflow.fade)),
+                    Flexible(
+                      child: Text('Accept', overflow: TextOverflow.fade),
+                    ),
                   ],
                 ),
               );
@@ -1015,6 +1037,7 @@ class _ThemeOptionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final LinearGradient previewGradient;
+  final IconData previewIcon;
   final VoidCallback onTap;
 
   const _ThemeOptionCard({
@@ -1023,6 +1046,7 @@ class _ThemeOptionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.previewGradient,
+    required this.previewIcon,
     required this.onTap,
   });
 
@@ -1043,11 +1067,16 @@ class _ThemeOptionCard extends StatelessWidget {
               height: 54,
               decoration: BoxDecoration(
                 gradient: previewGradient,
-                borderRadius: BorderRadius.circular(AppTheme.inputRadius),
+                borderRadius: mode == FluxThemeMode.classic
+                    ? BorderRadius.circular(16)
+                    : BorderRadius.zero,
                 border: Border.all(
-                  color: AppTheme.isNeoPop ? Colors.black : Colors.transparent,
+                  color: AppTheme.isNeoPop
+                      ? AppTheme.border
+                      : Colors.transparent,
                 ),
               ),
+              child: Icon(previewIcon, color: Colors.white, size: 26),
             ),
             SizedBox(width: 14),
             Expanded(
@@ -1306,9 +1335,10 @@ class _ConnectivityChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final dotColor = isOnline ? AppTheme.success : AppTheme.error;
     final textColor = isOnline ? AppTheme.success : AppTheme.error;
-    final bgColor =
-        isOnline ? AppTheme.successGlow : AppTheme.errorGlow;
-    final label = isOnline ? 'Online — Firebase Connected' : 'Offline — No internet';
+    final bgColor = isOnline ? AppTheme.successGlow : AppTheme.errorGlow;
+    final label = isOnline
+        ? 'Online — Firebase Connected'
+        : 'Offline — No internet';
     final borderColor = isOnline ? AppTheme.success : AppTheme.error;
 
     final inner = Row(

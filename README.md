@@ -1,85 +1,385 @@
 # FluxDrop
 
-Built for the NeoSapien Developer Intern Assessment. A real-time cross-device file sharing app using Flutter and Firebase, featuring the CRED NeoPOP design system.
+FluxDrop is a mobile-only file sharing app built for the NeoSapien Flutter Developer Intern Assessment.
+
+It lets one phone send files to another phone using a short code, with Firebase handling relay/signaling over the internet and a local LAN fast-path available in the codebase for nearby devices on the same Wi‑Fi subnet.
+
+The goal for this submission was not to build the most feature-rich app possible. The goal was to build a real, demoable mobile transfer flow, handle the starred edge cases honestly, and leave a codebase that I can defend in a review.
+
+## What Works
+
+- Anonymous onboarding with local identity provisioning on first launch
+- 6-character short-code identity with collision retry logic
+- Send one or more files to another device by short code
+- Real-time sender/receiver progress using Firestore listeners + Firebase Storage tasks
+- Cloud relay over the internet using Firebase Storage signed downloads
+- Incoming transfer notifications on Android when the app is closed
+- Accept / decline flow for first-time incoming downloads
+- Download cancellation and upload cancellation
+- Re-download completed transfers
+- SHA-256 integrity verification after download
+- Native save-to-gallery / save-to-photos support through platform channels
+- Metered connection warning for large transfers
+- Low-storage pre-check through native platform channels
+- Duplicate download protection by transfer ID
+- App restart recovery for stale transfer documents
+- Optional NeoPOP visual mode using the official CRED `neopop` Flutter package
+
+## Devices & OS Versions Tested
+
+Primary tested flows:
+
+- Android physical device: `CPH2569` on Android 15
+- iPhone physical device: iPhone 13 Pro Max on iOS 26.4.1
+
+Flows I personally tested during development:
+
+- Android -> Android over Firebase relay
+- iPhone -> Android over Firebase relay
+- Android receiver closed -> Android push notification tap routing
+- Transfer cancel / retry / accept / decline flows
+- Save to Photos on iOS
+- Save to Gallery / scoped storage path on Android code path
+
+Notes:
+
+- The Android side was the primary target for closed-app push and review/demo reliability.
+- iOS foreground app flow works, but true closed-app push behavior on iOS depends on APNs entitlements and signing setup.
 
 ## How to Run Locally
-FluxDrop relies on Firebase (Firestore, Storage, FCM) for signaling and cloud relay.
 
-1. Ensure you have Flutter installed (`flutter doctor`).
-2. Clone this repository.
-3. Run `flutter pub get`.
-4. (Optional) The project is already hooked up to a dev Firebase project via `firebase_options.dart`. To use your own, run `flutterfire configure`.
-5. Run using `flutter run` on a physical device. Note: Emulators don't handle FCM push notifications properly without Google Play Services setup.
+### Prerequisites
 
-## Devices & OS Tested On
-- iPhone 13 Pro Max (Physical device, iOS 26.4.1)
-- Android API 34 (Emulator) & Physical Android device
+- Flutter SDK installed and working in `flutter doctor`
+- Xcode for iOS builds
+- Android Studio / Android SDK for Android builds
+- Firebase CLI only if you want to redeploy the included Cloud Function
 
-## Backend & Architecture Strategy
+### App Setup
+
+1. Clone the repo.
+2. Run `flutter pub get`.
+3. Make sure Firebase config files are present:
+   - `lib/firebase_options.dart`
+   - Android `google-services.json`
+   - iOS `GoogleService-Info.plist`
+4. Run on a physical device:
+   - `flutter run`
+
+### Backend / Firebase Setup
+
+This app expects the following Firebase services:
+
+- Firestore
+- Firebase Storage
+- Firebase Cloud Messaging
+- Cloud Functions
+
+If you want to use your own Firebase project instead of the one currently wired during development:
+
+1. Run `flutterfire configure`
+2. Update platform Firebase config files
+3. Deploy the Cloud Function in `functions/`
+
+### Cloud Function Deployment
+
+The repo contains a Firebase Cloud Function used to notify the receiver when a transfer becomes ready:
+
+- `functions/index.js`
+
+Deploy it with:
+
+```bash
+firebase deploy --only functions --project <your-project-id>
+```
+
+## Installable Build Notes
+
+### Android
+
+For submission, generate a signed debug APK:
+
+```bash
+flutter build apk --debug
+```
+
+Recommended verification:
+
+- uninstall the app from the target device
+- install the generated APK fresh
+- verify onboarding, send, receive, accept, cancel, and notification tap behavior
+
+### iOS
+
+For this submission, iOS is best treated as:
+
+- a real-device run target from Xcode / `flutter run`
+- not the primary reviewed platform for closed-app push behavior
+
+If shipping to a reviewer on iOS, include exact Xcode run instructions unless you have TestFlight/APNs-ready signing.
+
+Debug-run caveat from my local setup:
+
+- on my local iPhone debug setup, `flutter run` would occasionally fail during launch with a native `EXC_BAD_ACCESS` crash on a Dart worker thread before the app fully opened
+- in practice, stopping and re-running `flutter run` 2-3 times usually cleared it and the app launched normally
+- I was not able to prove a single root cause with confidence, but it appeared related to local iOS debug/runtime initialization rather than the normal in-app transfer flow once the app was running
+- if reviewed using a properly provisioned Apple Developer account / signing setup, I would still recommend treating Android as the primary demo path and iOS as a secondary verified path
+
+## Architecture Overview
+
 ```text
-  [ Sender App ]                         [ Receiver App ]
-         |                                      ^
-         | 1. Create Transfer                   | 4. Snapshot Listener
-         v                                      |    
- +------------------+                   +------------------+
- |    Firestore     | <--- 3. Notify -- |       FCM        |
- |  (State machine) |                   |  (Push / Wakeup) |
- +------------------+                   +------------------+
-         ^                                      |
-         | 2. Upload Bytes                      | 5. Download Bytes
-         v                                      v
- +---------------------------------------------------------+
- |                   Firebase Storage                      |
- |                   (Cloud Relay)                         |
- +---------------------------------------------------------+
- ```
+  [ Sender App ]
+        |
+        | 1. Create / update transfer doc
+        v
+  +--------------------+
+  |     Firestore      |
+  | transfer state     |
+  +--------------------+
+        |
+        | 2. Upload file bytes
+        v
+  +--------------------+
+  | Firebase Storage   |
+  | cloud relay        |
+  +--------------------+
+        |
+        | 3. Receiver downloads
+        v
+  [ Receiver App ]
 
-I chose a **Backend-as-a-Service (BaaS) approach** over writing a custom Node.js/Go backend to focus entirely on the mobile experience while ensuring stability.
+  Notification side-path:
+  Firestore status change -> Cloud Function -> FCM -> receiver opens Transfers
+```
 
-### 1. Cloud Relay (Remote Transfers)
-- **State & Signaling -> Firestore:** Instead of building a custom WebSocket server, I used Firestore. The `transfers` collection acts as a pure state machine (`uploading`, `ready`, `downloading`, `completed`, `failed`). B's app runs a snapshot listener for `receiverId == B`. This provides near-instant synchronization without manual polling.
-- **Payload Transport -> Firebase Storage:** The sender pushes chunked bytes to Firebase Storage. **Why not WebRTC?** Because true Remote WebRTC across symmetric NATs requires deploying and maintaining dedicated TURN servers. Firebase Storage provides a rock-solid, chunked, automatically-resumable global relay out of the box with zero ops overhead.
+### Main Pieces
 
-### 2. Nearby Transport Fast-Path (Option #5)
-When A and B are on the exact same Wi-Fi subnet, they bypass Firebase Storage entirely:
-1. Sender A spins up a raw `ServerSocket` and advertises its LAN IP/Port in the Firestore signaling doc.
-2. Receiver B sees the IP, confirms they are on the same `/24` subnet, and connects directly via TCP.
-3. The raw binary payload traverses the local router (skipping the internet).
+- UI: Flutter screens and widgets
+- State / signaling: Firestore transfer documents
+- File relay: Firebase Storage
+- Notifications: Cloud Function + FCM
+- Native bridge: MethodChannel for storage checks and save-to-gallery/photos
+- Optional nearby path: LAN TCP transfer service for same-subnet devices
+
+## Transport Choice and Rationale
+
+I used Firebase as the primary transport stack:
+
+- Firestore for state machine updates
+- Firebase Storage for file relay
+- FCM for closed-app awareness on Android
+
+Why I chose this:
+
+- it works across distance and NAT without me running my own relay infrastructure
+- Firebase Storage already handles chunked uploads well for large files
+- Firestore listeners are enough to achieve the "recipient sees it within a couple of seconds" expectation
+- it let me focus time on mobile behavior, edge cases, and transfer UX instead of building and hosting a custom backend
+
+Why not WebRTC as the primary path:
+
+- for internet-grade reliability, WebRTC usually means STUN/TURN work and more debugging around NAT traversal
+- that would have been higher risk for the assessment timeline
+
+### Nearby / LAN Fast-Path
+
+There is also a LAN fast-path implementation in the codebase:
+
+- sender can open a local TCP server
+- receiver can connect directly if both devices are on the same `/24` subnet
+- files can stream peer-to-peer without Firebase Storage for the payload itself
+
+Important honesty note:
+
+- this path is implemented in the repo and integrated into the transfer service
+- the cloud relay path was the primary tested and demo-safe path
+- I would describe the LAN path as implemented but still something I would re-verify carefully before relying on it for the final demo
+
+Relevant files:
+
+- [transfer_service.dart](/Users/umesh/Desktop/NeoSapien/fluxdrop/lib/services/transfer_service.dart)
+- [lan_transfer_service.dart](/Users/umesh/Desktop/NeoSapien/fluxdrop/lib/services/lan_transfer_service.dart)
 
 ## Platform Channel Bonus Work
-I tackled **Option #2 (Save-to-gallery)** and elements of **Option #5 (Nearby Transport)**:
 
-1. **MediaStore & Photos (Option #2)**: Built a custom `fluxdrop/storage` MethodChannel. 
-   - **Android**: Custom Kotlin writes media directly into `MediaStore` (Scoped Storage compliance), directing files into `Pictures/FluxDrop` or `Movies/FluxDrop` without needing the heavy `MANAGE_EXTERNAL_STORAGE` permission.
-   - **iOS**: Uses `PHPhotoLibrary` to push images and videos natively into the camera roll.
-2. **Local IP Discovery (Option #5)**: To facilitate the LAN fast-path, the Android side natively fetches the real Wi-Fi IP address directly via `WifiManager`, because dart:io's `NetworkInterface` is notoriously unreliable on recent Android API levels.
+I attempted bonus platform channel work instead of relying only on pub.dev packages.
 
-## Edge Cases Handled (Section 3)
+### Implemented
 
-- **★ Short-code collisions**: Handled securely via Firebase transaction logic during on-device provisioning.
-- **★ Invalid recipient code**: Sender gets an immediate "Not Found" UI validation before attempting any upload.
-- **★ Recipient offline**: The transfer creates a Firestore document with a 24-hour TTL (`expiresAt`). If the receiver opens the app later, the transfer will be waiting to be accepted.
-- **★ Network drops mid-transfer**: Handled automatically by the Firebase SDK using chunked uploads and retries.
-- **★ Large files**: Capped at 500 MB. We stream bytes directly to disk via `writeToFile` (and chunked TCP socket reading for LAN) to prevent out-of-memory (OOM) crashes.
-- **★ Multiple files at once**: Batch sending works. Adding duplicate files highlights them clearly with an amber badge in the UI.
-- **★ Permission denial**: Graceful degradation. If Android 13+ media permissions are denied, it falls back to saving in the app's internal documents folder.
-- **★ Incoming transfer while app is closed**: Handled by FCM. Background pushes deep-link the user back into the transfers view.
-- **★ Transport encryption**: Firebase Storage path enforces TLS 1.3 natively. 
-- **Corrupted transfers**: SHA-256 hashes are computed dynamically on upload and verified on download across both cloud and local TCP paths. Mismatches delete the file and throw an error.
-- **App killed mid-transfer**: Implemented a startup scanner (`recoverStaleTransfers`). It detects orphaned "uploading" or "downloading" documents left by crashes/force-quits and cleans them up gracefully (failing the stuck upload to alert the receiver, or reverting a stuck download so the receiver can tap 'Accept' again).
+1. Save to gallery / photos
 
-## Scope & Honesty Section (What I Didn't Do)
-In accordance with the assessment's emphasis on scope discipline, here is what is skipped or limited:
+- Android: native `MediaStore` path via Kotlin
+- iOS: native `PHPhotoLibrary` path via Swift
+- exposed to Flutter through `MethodChannel('fluxdrop/storage')`
 
-1. **Background Survival (Option #4)**: True background download survival via iOS `URLSession` / Android Foreground Services is not implemented. OEM battery killers make this extremely complex. Instead of faking it or shipping a flaky version, I focused entirely on stability and built the `recoverStaleTransfers()` logic above. If the OS kills the app due to memory pressure mid-download, the transfer simply reverts to "uploaded" securely on next launch.
-2. **Cross-Platform Push Constraints**: The code wraps FCM perfectly, but testing true offline background pushes on an iOS physical device requires a paid Apple Developer certificate (APNs entitlement), which I do not have on this machine. Foreground Firestore listeners work instantly.
-3. **Identity Persistence / Recovery**: The anonymous local UID and short-code persist as long as the app is installed. If a user clears App Data or reinstalls, they get a new code. There is no account recovery flow. This is intentional to respect the "anonymous onboarding" requirement effortlessly.
-4. **LAN Encryption**: The cloud path (Firebase) enforces TLS 1.3 natively. The local Wi-Fi TCP fast-path is unencrypted. It relies on the inherent security of the private WPA2/WPA3 subnet (like Airdrop over local Wi-Fi), but theoretically is sniffable by a bad actor sitting on the same local network.
+2. Native low-storage check
+
+- Android: storage space checked natively before accepting a large download
+- iOS: free-space check exposed through the same channel
+
+3. Nearby transport support
+
+- Android native Wi‑Fi IP lookup is used to improve local subnet detection
+
+Relevant files:
+
+- [MainActivity.kt](/Users/umesh/Desktop/NeoSapien/fluxdrop/android/app/src/main/kotlin/com/example/fluxdrop/MainActivity.kt)
+- [AppDelegate.swift](/Users/umesh/Desktop/NeoSapien/fluxdrop/ios/Runner/AppDelegate.swift)
+
+### Not Implemented
+
+- background transfer survival via Android foreground service / iOS `URLSession`
+- native file picker through direct platform APIs
+- native share sheet as a custom channel feature
+
+## Section 3 Edge Cases
+
+### Handled
+
+- ★ Short-code collisions
+  - generated code retries until unique
+- ★ Invalid recipient code
+  - sender gets immediate validation / "not found" feedback
+- Ambiguous characters
+  - alphabet intentionally avoids ambiguous characters
+- Self-send
+  - blocked
+- ★ Recipient offline
+  - queue-with-TTL approach
+  - transfer stays available until expiry
+- ★ Network drops mid-transfer
+  - Firebase Storage handles upload retry behavior better than a naive in-memory approach
+- Duplicate delivery
+  - tracked by transfer ID, not filename
+- Metered connections
+  - warning shown before large transfers on likely metered connection
+- ★ Large files
+  - capped at 500 MB
+  - upload uses `putFile`
+  - download streams to disk
+- ★ Multiple files at once
+  - batch transfer works
+  - one failure does not kill the whole batch
+- Unusual MIME types
+  - unknown types fall back to `application/octet-stream`
+- Empty / zero-byte files
+  - blocked before sending
+- Filename conflicts on save
+  - renamed automatically with suffix
+- Corrupted transfers
+  - SHA-256 checked after download
+- ★ Permission denial
+  - app degrades instead of crashing
+- Scoped storage
+  - Android save-to-gallery uses `MediaStore`
+- ★ Incoming transfer while app is closed
+  - Android push notification flow implemented
+- Low device storage
+  - native free-space pre-check before download
+- ★ Transport encryption
+  - Firebase network path uses TLS
+- UX cancel affordance
+  - long-running upload/download operations can be cancelled
+- Clear error messaging
+  - failures are surfaced through toasts / visible states rather than silent crashes
+- State survival after app death
+  - stale transfer recovery runs on startup
+
+### Partially Handled / Important Caveats
+
+- Sender kills app mid-upload
+  - transfer does not continue in the true background
+  - stale upload is cleaned up on next app launch
+- App killed by OS under memory pressure
+  - recovery logic exists, but this is not the same as true background continuation
+- Network transitions / airplane mode / long backgrounding
+  - basic recovery is there through Firebase task behavior and restart cleanup
+  - not fully production-hardened for every mobile OS edge case
+- Content privacy
+  - receiver has accept/decline flow
+  - there is no block list or rate limiting yet
+- At-rest encryption on relay
+  - I rely on Firebase-managed infrastructure
+  - I did not add an app-level custom encryption layer on top of Firebase Storage
+
+### Not Fully Solved
+
+- True background transfer survival
+- Full iOS closed-app push verification in this local signing environment
+- OEM battery killer mitigation
+- Account recovery after app data clear on Android
+- LAN path encryption
+
+## Known Bugs / Limitations
+
+- iOS push is not the strongest part of this submission because APNs-ready signing was not available in my local setup
+- iOS debug launches were occasionally flaky in my local environment and sometimes required restarting `flutter run` a couple of times before the app opened successfully
+- the LAN fast-path is implemented, but the Firebase relay path is the one I would treat as primary for demo confidence
+- background continuation is not implemented as a full native worker/service solution
+- the app supports re-downloads, but I intentionally kept the state model simple instead of building a more complex download history manager
+- cross-platform parity exists, but Android is the safer primary demo target
 
 ## AI Tool Usage
-I utilized Claude, Gemini, and Cursor as pair programming partners for this assessment.
 
-- **Where it helped**: Massively accelerated writing the Android `MediaStore` Kotlin boilerplate (which is famously verbose and unforgiving), and quickly scaffolding wrappers around the CRED NeoPOP package components.
-- **Where I overrode it**: 
-  1. AI initially suggested keeping interrupted downloads in a permanent "failed" state. I re-architected the state machine's error handler to compute a `revertStatus`, allowing interrupted downloads to gracefully revert to "uploaded" so a user can simply tap "Accept" and try again.
-  2. The AI attempted to replace selected files entirely when adding more files in the sender UI. I stepped in and rewrote the logic to correctly append the files while adding deduplication and duplication-highlighting logic.
+I used AI tools as pair-programming assistance, not as a substitute for understanding the code.
+
+Tools used:
+
+- Codex
+- Gemini
+
+Where AI helped most:
+
+- platform channel boilerplate
+- Firebase plumbing
+- UI refactors
+- edge-case brainstorming
+- repetitive code cleanup
+
+Where I overrode AI suggestions:
+
+- transfer state transitions around cancel / retry / re-download
+- notification tap routing and platform-specific behavior
+- parts of the NeoPOP integration where the initial changes affected the wrong UI surfaces
+
+## Repo Notes
+
+- No runtime `.env` values are required for the current local setup
+- Firebase configuration is handled through checked-in platform config files / `firebase_options.dart`
+- A placeholder `.env.example` is included only to satisfy fresh-clone/documentation expectations
+
+## Fresh Clone Checklist
+
+On a fresh machine, I would expect someone reviewing the repo to do this:
+
+1. `flutter pub get`
+2. confirm Firebase config files are present
+3. optionally deploy `functions/` to their own Firebase project
+4. run on a physical Android device
+5. test:
+   - onboarding
+   - short-code lookup
+   - send file
+   - receive file
+   - accept / decline
+   - cancel transfer
+   - notification tap routing
+
+## Final Honesty Summary
+
+What I am most confident showing live:
+
+- anonymous onboarding
+- short-code identity
+- Android-to-Android or iPhone-to-Android file transfer
+- real-time progress
+- accept / decline
+- cancel / retry
+- Android closed-app incoming transfer notification
+- save-to-gallery / save-to-photos integration
+
+What I would call out explicitly in the walkthrough instead of overselling:
+
+- iOS closed-app push is limited by local signing / APNs setup
+- background survival is not fully implemented
+- LAN fast-path exists in the codebase, but Firebase relay is the primary reliable path

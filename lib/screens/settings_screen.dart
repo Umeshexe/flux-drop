@@ -524,7 +524,7 @@ class _SettingsPanelState extends State<SettingsPanel>
                   // Footer
                   Center(
                     child: Text(
-                      'FluxDrop v$_version · Made with ♥',
+                      'FluxDrop v$_version · Made by Umesh Chandra',
                       style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                     ),
                   ),
