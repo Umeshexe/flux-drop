@@ -1,6 +1,6 @@
 # FluxDrop
 
-FluxDrop is a mobile-only file sharing app built for the NeoSapien Flutter Developer Intern Assessment.
+FluxDrop is a mobile-only file sharing app.
 
 It lets one phone send files to another phone using a short code, with Firebase handling relay/signaling over the internet and a local LAN fast-path available in the codebase for nearby devices on the same Wi‑Fi subnet.
 
